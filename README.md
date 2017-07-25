@@ -5,6 +5,7 @@ Peer to Peer distributed file storage system implemented in golang
 Copy the repository to your $GOPATH
 - "go install masterfs"
 - "go install slavefs"  
+
 Both the executables will be created in the 'bin' folder of your repository.
 
 ## Description:
