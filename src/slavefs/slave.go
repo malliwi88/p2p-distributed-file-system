@@ -2,18 +2,38 @@ package main
 
 import (
 	"net"
-	"fmt"
 	"log"
 	"time"
 	"os"
 	"path"
 	"io/ioutil"
-
+	"path/filepath"
+	"encoding/json"
+	"io"
+	"strconv"
 )
 
 type Peer struct {
 	Ip string
 	Port string
+}
+
+type message struct {
+	Type string `json:"type"`
+	Data []byte `json:"data"`
+	Number int64 `json:"number"`
+}
+
+func checkError(e error){
+	if e != nil {
+		log.Println(e)
+	}
+}
+
+func checkFatal(e error){
+	if e != nil {
+		log.Fatalln(e)
+	}	
 }
 
 func main() {
@@ -33,69 +53,65 @@ func main() {
 		os.Mkdir(path, 0777)
 	}
 
-	connectToMaster(master,path)
-
+	conn := connectToMaster(master)
+    manageMesseges(conn, path)
 }
 
-func connectToMaster(dst Peer, path string) {
+func connectToMaster(dst Peer) net.Conn {
     conn, err := net.DialTimeout("tcp", dst.Ip + ":" + dst.Port, time.Duration(10) * time.Second)
    	if err != nil {
 		log.Fatalln(err)
 
     } else {
-        log.Println("Connected to master, Sending msg...")
-		conn.Write([]byte("Available"))
+        log.Println("Connected to master")
+	}
+	return conn
+}
 
-		for {
-			// get send/recv
-			buff := make([]byte, 1024)	
-			n, err := conn.Read(buff)
+func manageMesseges(conn net.Conn, path string) {
+	for {
+    	
+    	var msg message
+		decoder := json.NewDecoder(conn)
+    	err := decoder.Decode(&msg)    	
+    	checkFatal(err)
+    	if err == io.EOF {
+    		conn.Close()
+    		break
+    	}
+
+		if msg.Type == "send" {
+			// create file block
+			filename := strconv.Itoa(int(msg.Number))
+			f, err := os.Create(filepath.Join(path, filename))
+			checkFatal(err)
+			f.Chmod(0777)
+	    	b, err := f.WriteString(string(msg.Data))
+	    	log.Printf("Wrote %d bytes to file: %s \n", b, filename)
+	    	f.Sync()
+	    	f.Close()
+	    	
+	    	send_ack := message{"send_ack", []byte(""), msg.Number}
+			json.NewEncoder(conn).Encode(&send_ack)
+
+		} else if msg.Type == "recv" {
+			filename := strconv.Itoa(int(msg.Number))
+			// search for file
+			dat, err := ioutil.ReadFile(filepath.Join(path, filename))
 			if err != nil {
 				log.Println(err)
 			}
-			conn.Write([]byte("ACK"))
+		    recv_ack := message{"recv_ack", dat, msg.Number}
+	    	log.Printf("Sending file: %s \n", filename)
+			json.NewEncoder(conn).Encode(&recv_ack)
 
-			if string(buff[:4]) == "send" {
-				n, err = conn.Read(buff)
-				if err != nil {
-					log.Println(err)
-				}
-				conn.Write([]byte("GOT NAME"))
-				// Read file block
-				log.Println("Waiting for file-block")
-				dataBuff := make([]byte, 512)
-				n2, err := conn.Read(dataBuff)
-				if err != nil {
-					log.Fatal(err)
-				}
-				// create file block
-				f, err := os.Create(path + "/" + string(buff[:n]))
-				if err != nil {
-					log.Fatal(err)
-				}
-				f.Chmod(0777)
-		    	b, err := f.WriteString(string(dataBuff[:n2]))
-		    	fmt.Printf("Wrote %d bytes\n", b)
-		    	f.Sync()
-		    	f.Close()
-			} else if string(buff[:4]) == "recv" {
-				n, err := conn.Read(buff)
-				if err != nil {
-					log.Println(err)
-				}
-				filename := string(buff[:n])
-				// search for file
-				dat, err := ioutil.ReadFile(path + "/" + filename)
-				if err != nil {
-					log.Println(err)
-				}
-			    conn.Write(dat)
-			}
-
-	    }
-
-	}
-
+		} else if msg.Type == "delete" {
+			filename := strconv.Itoa(int(msg.Number))
+			//delete the file
+	    	log.Printf("Removing file: %s \n", filename)
+			err := os.Remove(filepath.Join(path, filename))
+			checkError(err)
+		}
+    }
 }
-
 

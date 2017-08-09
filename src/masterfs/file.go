@@ -4,60 +4,88 @@ import (
 	"log"
 	"bazil.org/fuse"
 	"golang.org/x/net/context"
-	"strconv"
 )
 
 // File implements both Node and Handle for the hello file.
 type File struct{
 	Node
-	size int
+	dataNodes [] string
 }
 
 
 func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
-	a.Inode = f.inode
-	a.Mode = 0777
-	a.Size = uint64(f.size)
+	
+	a.Inode = f.attributes.Inode
+	a.Mode = f.attributes.Mode
+	a.Size = f.attributes.Size
+	a.Blocks = f.attributes.Blocks
+	a.BlockSize = f.attributes.BlockSize
+	log.Println("Requested Attr for File", f.name, "has data size", f.attributes.Size, "has blocks", f.attributes.Blocks)
 	return nil
 }
 
-func (f *File) ReadAll(ctx context.Context) ([]byte, error) {
-	log.Println("Reading all of file", f.name)
-	var buff []byte
-	for _, p := range f.dataNodes {
-		b := recvBlock(p)
-		buff = append(buff, b...)
-		log.Println(len(buff))
+
+func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
+	
+	log.Printf("Read %d bytes from offset %d in file %s",req.Size, req.Offset, f.name)
+	limit := uint64(req.Offset) + uint64(req.Size)
+	if limit > f.attributes.Size {
+		limit = f.attributes.Size
 	}
-	return buff, nil
+	start_block := Offset2Block(uint64(req.Offset))
+	end_block := Offset2Block(uint64(limit))
+	
+	if limit == uint64(req.Offset){
+		resp.Data = []byte{}
+		return nil
+	
+	} else if limit % dataBlockSize == uint64(0) && limit != uint64(0) {
+		end_block = end_block - uint64(1)	
+	}
+	range_block := end_block - start_block
+
+	buff := make([]byte, 0, dataBlockSize*range_block)
+	for i := start_block; i <= end_block; i++ {
+		b, err := recvBlock(f.dataNodes[i])
+		if err != nil {
+			return err
+		}
+		buff = append(buff, b...)
+	}	
+	resp.Data = buff[uint64(req.Offset) - start_block*dataBlockSize : limit - start_block*dataBlockSize]
+	return nil
 }
+
 
 func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	log.Println("Trying to write to ", f.name, "offset", req.Offset, "dataSize:", len(req.Data))
-	if len(req.Data) > 0 {
-		f.size = len(req.Data)
-		resp.Size = len(req.Data)
-		chunks := split(req.Data,dataBlockSize)
-		peerNum := 0
-		if len(connList) > 0 {
-			for _, c := range chunks {
-				f.dataNodes = append(f.dataNodes,connList[peerNum].RemoteAddr().String() + "/" + strconv.Itoa(blockNum))
-				sendBlock(connList[peerNum],blockNum,c)
-				blockNum += 1
-				if (peerNum+1) == len(connList){
-					peerNum = 0
-				} else {
-					peerNum += 1
-				}
+	
+	if len(connList) > 0 {
+		write_length := uint64(len(req.Data)) 						// data write length
+		write_offset := uint64(req.Offset)     						// offset of the write
+		limit := write_offset + write_length             			// The final length of the data
+
+		start_block := Offset2Block(write_offset)
+		end_block := Offset2Block(limit)
+		range_block := RangeOfBlocks(start_block,end_block)  // range of blocks to change or create
+		buff := make([]byte, len(req.Data))
+		copy(buff[:], req.Data[:])
+
+		for _, value:= range range_block {
+			if len(buff) > 0{
+				BlockCheck(value,&f.dataNodes,write_offset,limit,dataBlockSize*value,&buff) // check if block exists overwrite else create
 			}
-			log.Println("Wrote to file", f.name)
-
-		} else {
-			log.Println("No peers connected! Cannot write to file", f.name)
 		}
+
+		f.attributes.Size = limit
+		f.attributes.Blocks = Blocks(f.attributes.Size)
+		resp.Size = int(write_length)	
+		log.Printf("Wrote %d bytes offset by %d to file %s", write_length, write_offset, f.name)
+		
+	} else {
+		log.Println("No peers connected! Cannot write to file", f.name)
+
 	}
+
 	return nil
+
 }
-
-
-

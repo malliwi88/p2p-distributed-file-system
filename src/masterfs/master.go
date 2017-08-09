@@ -9,8 +9,9 @@ import (
 	"os"
 	"log"
 	"strings"
-	"strconv"
 	"flag"
+	"encoding/json"
+	"strconv"
 )
 
 
@@ -23,21 +24,15 @@ type Peer struct {
 	Port string
 }
 
+type message struct {
+	Type string `json:"type"`
+	Data []byte `json:"data"`
+	Number int64 `json:"number"`
+}
+
 // functions
-func checkError(e error){
-	if e != nil {
-		log.Println(e)
-	}
-}
-
-func checkFatal(e error){
-	if e != nil {
-		log.Fatalln(e)
-	}	
-}
-
-
 func selectMountpoint() string {
+	
 	flag.Parse()
 	if flag.NArg() != 1 {
 		log.Printf("Usage of %s:\n", os.Args[0])
@@ -50,18 +45,9 @@ func selectMountpoint() string {
 	return mountpoint
 }
 
-func main() {
-	mountpoint := selectMountpoint()
-	master_port := "8000"
-	interface_addr, _ := net.InterfaceAddrs()
-	local_ip := interface_addr[0].String()
-	master := Peer{Ip: local_ip, Port: master_port}
-	fmt.Println("Master details: ", master)
-	go listen(master)
-	FUSE(mountpoint)
-}
 
 func listen(master Peer) {
+	
 	listen, err := net.Listen("tcp", ":" + master.Port)
 	defer listen.Close()
 	if err != nil {
@@ -70,62 +56,81 @@ func listen(master Peer) {
 	}
 	log.Printf("Begin listen port: %s", master.Port)
 	for {
-			conn, err := listen.Accept()
-			if err != nil {
-				log.Fatalln(err)
-				continue
-			}	
-			handler(conn)
-		}
+		conn, err := listen.Accept()
+		if err != nil {
+			log.Fatalln(err)
+			continue
+		}	
+		handler(conn)
+	}
 }
 
 
 func handler(conn net.Conn) {	
-	buff := make([]byte, 1024)
-	n, err := conn.Read(buff)
-	checkError(err)
+	
 	s_addr := strings.Split(conn.RemoteAddr().String(),":")
 	slave := Peer{Ip: s_addr[0], Port: s_addr[1]}
-	log.Printf("Got request: " + string(buff[:n]) + " from : %s",slave)
-	connList = append(connList, conn)
+	log.Printf("Got request" + " from: %s",slave)
+	connList = append(connList, conn)	
+}
+
+
+func sendBlock(addr string, data []byte) {
 	
-}
-
-
-func sendBlock(conn net.Conn, blockNum int, data []byte) {
-	conn.Write([]byte("send"))
-	// got ACK
-	buff := make([]byte, 1024)	
-	_, err := conn.Read(buff)		
-	checkError(err)
-	conn.Write([]byte(  strconv.Itoa(blockNum)  )  )					
-	// got name
-	buff = make([]byte, 1024)	
-	_, err = conn.Read(buff)		
-	checkError(err)
-	// copy data block to connection
-	conn.Write(data)		
+	conn, block := getConnBlock(addr)
+	m := message{"send", data, block}	
+	json.NewEncoder(conn).Encode(&m)
+	
+	var ack message
+	decoder := json.NewDecoder(conn)
+ 	err := decoder.Decode(&ack)
+ 	checkError(err)
 
 }
 
-func recvBlock(addr string) []byte{
-	s_addr := strings.Split(addr,"/")
-	var peer_addr net.Conn
-	for _, conn := range connList {
-		if conn.RemoteAddr().String() == s_addr[0] {
-			peer_addr = conn
+func recvBlock(addr string) ([]byte, error) {
+	
+	conn, block := getConnBlock(addr)
+	m := message{"recv", []byte(""), block}
+	json.NewEncoder(conn).Encode(&m)
+
+	var ack message
+	decoder := json.NewDecoder(conn)
+ 	err := decoder.Decode(&ack)
+ 	checkError(err)
+	return ack.Data, err
+}
+
+func deleteBlock(addr string) {
+	
+	conn, block := getConnBlock(addr)
+	m := message{"delete", []byte(""), block}
+	json.NewEncoder(conn).Encode(&m)
+}
+
+func getConnBlock(addr string) (net.Conn, int64) {
+	
+	s_addr := strings.Split(addr, "/")
+	var conn net.Conn
+	for _, c := range connList {
+		if c.RemoteAddr().String() == s_addr[0] {
+			conn = c
 		}
 	}
-	block := s_addr[1]
-	peer_addr.Write([]byte("recv"))
-	// got ACK
-	buff := make([]byte, 512)	
-	_, err := peer_addr.Read(buff)		
+	block, err := strconv.Atoi(s_addr[1])
 	checkError(err)
-	peer_addr.Write([]byte(block))
-	buff = make([]byte, 512)
-	_, err = peer_addr.Read(buff)
-	checkError(err)
-	return buff
+	return conn, int64(block)
+}
 
+
+func main() {
+
+	mountpoint := selectMountpoint()
+	master_port := "8000"
+	interface_addr, _ := net.InterfaceAddrs()
+	local_ip := interface_addr[0].String()
+	master := Peer{Ip: local_ip, Port: master_port}
+	fmt.Println("Master details: ", master)
+	go listen(master)
+	FUSE(mountpoint)
 }

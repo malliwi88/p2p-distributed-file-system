@@ -43,6 +43,7 @@ func (d *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) { //** f
 func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
 	log.Println("Create request for name", req.Name)
 	f := &File{Node: Node{name: req.Name, inode: NewInode()}}
+	f.InitNode()
 	if d.files != nil {
 		(*d.files) = append(*d.files, f)
 	}

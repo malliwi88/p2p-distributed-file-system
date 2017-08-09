@@ -1,32 +1,50 @@
 package main
 
 import (
-	"flag"
-	"fmt"
 	"log"
-	"os"
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
+	"strconv"
 )
 
 // variables
-var dataBlockSize = 512
-var blockNum = 0
+var dataBlockSize uint64 = 512
+var blockNum int = 0
+var inode uint64
 
 // structures
 type Node struct {
 	inode uint64
 	name  string
-	dataNodes [] string
-}
-var inode uint64
-func NewInode() uint64 {
-	inode += 1
-	return inode
+	attributes fuse.Attr
 }
 
 // functions
-func split(buf []byte, lim int) [][]byte {
+func (n *Node) InitNode() {
+	
+	n.attributes.Inode = n.inode      	// inode number
+    n.attributes.Size = 0      			// size in bytes
+    n.attributes.Blocks = 0      		// size in 512-byte units
+	n.attributes.Mode = 0644  			// file mode
+	n.attributes.BlockSize = uint32(dataBlockSize) // block size
+}
+
+func checkError(e error){
+	
+	if e != nil {
+		log.Println(e)
+	}
+}
+
+func checkFatal(e error){
+	
+	if e != nil {
+		log.Fatalln(e)
+	}	
+}
+
+func Split(buf []byte, lim int) [][]byte {
+	
 	var chunk []byte
 	chunks := make([][]byte, 0, len(buf)/lim+1)
 	for len(buf) >= lim {
@@ -39,14 +57,98 @@ func split(buf []byte, lim int) [][]byte {
 	return chunks
 }
 
-
-func usage() {
-	fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  %s MOUNTPOINT\n", os.Args[0])
-	flag.PrintDefaults()
+func NewInode() uint64 {
+	
+	inode += 1
+	return inode
 }
 
+
+func Blocks(value uint64) uint64 { // Blocks returns the number of 512 byte blocks required
+	
+	if value == 0 {
+		return 0
+	}
+	blocks := value / dataBlockSize
+	if value%dataBlockSize > 0 {
+		return blocks + 1
+	}
+	return blocks
+}
+
+func Offset2Block (value uint64) uint64 {
+	
+	return (value / dataBlockSize)
+}
+
+func RangeOfBlocks (min, max uint64) []uint64{
+	
+	a := make([]uint64, max-min+uint64(1))
+    for i := range a {
+        a[i] = min + uint64(i)
+    }
+    return a
+}
+
+func BlockCheck(offsetBlock uint64, dataNodes *[]string, startWrite uint64, endWrite uint64, blockStart uint64, buffer *[]byte) {
+	
+	if offsetBlock < uint64(len(*dataNodes)) {
+		dataBlock, err := recvBlock((*dataNodes)[offsetBlock])
+		checkError(err)
+		if endWrite > (blockStart+dataBlockSize) {
+			if startWrite >= blockStart && startWrite < (blockStart+dataBlockSize) { // 1st block
+				// datablock[0:starWrite] = do nothing
+				copy(dataBlock[Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,startWrite):Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart+dataBlockSize)] , (*buffer)[0:((blockStart+dataBlockSize)-startWrite)])
+				*buffer = append((*buffer)[:0], (*buffer)[((blockStart+dataBlockSize)-startWrite):]...)
+				sendBlock((*dataNodes)[offsetBlock],dataBlock)
+			} else {
+				copy(dataBlock[Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart):Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart+dataBlockSize)] , (*buffer)[0:dataBlockSize])
+				*buffer = append((*buffer)[:0], (*buffer)[dataBlockSize:]...)
+				sendBlock((*dataNodes)[offsetBlock],dataBlock)
+			}		
+		} else {
+			if startWrite >= blockStart && startWrite < (blockStart+dataBlockSize) { // 1st block
+				// datablock[blockStart:starWrite] = do nothing
+				copy(dataBlock[Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,startWrite):Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,endWrite)] , (*buffer)[:])
+				*buffer = (*buffer)[:0]
+				sendBlock((*dataNodes)[offsetBlock],dataBlock)
+			} else {
+				copy(dataBlock[Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart):Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,endWrite)] , (*buffer)[:])
+				*buffer = (*buffer)[:0]
+				sendBlock((*dataNodes)[offsetBlock],dataBlock)
+			}
+		}
+		
+	} else {
+		chunks := Split(*buffer,int(dataBlockSize))
+		peerNum := 0
+		if len(connList) > 0 {
+			for _, c := range chunks {
+				*dataNodes = append(*dataNodes,connList[peerNum].RemoteAddr().String() + "/" + strconv.Itoa(blockNum))
+				sendBlock(connList[peerNum].RemoteAddr().String() + "/" + strconv.Itoa(blockNum),c)
+				blockNum += 1
+				if (peerNum+1) == len(connList){
+					peerNum = 0
+				} else {
+					peerNum += 1
+				}
+			}
+			*buffer = (*buffer)[:0]
+		}
+	}
+}
+
+func Normalize(OldMin,OldMax uint64,NewMin,NewMax uint64,OldValue uint64) uint64{
+	
+	OldRange := (OldMax - OldMin)  
+	NewRange := (NewMax - NewMin)  
+	NewValue := (((OldValue - OldMin) * NewRange) / OldRange) + NewMin
+	return NewValue	
+}
+
+
 func FUSE(mountpoint string) {	
+	
 	c, err := fuse.Mount(mountpoint)
 	if err != nil {
 		log.Fatal(err)
@@ -69,7 +171,6 @@ func FUSE(mountpoint string) {
 		log.Fatal(err)
 	}
 }
-
 
 
 
