@@ -18,10 +18,11 @@ will work as if all the files were stored locally.
 - Division of file into blocks
 - Distributed writeAll function
 - Distributed readAll function
+- Write by offset
+- Read by offset
 
 #### Functions to implement (For now):
-- Read a particular file block stored at the slaves
-- Write a particular block and update the corresponding blocks.
+- Remove file blocks
 
 
 
