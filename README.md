@@ -22,7 +22,7 @@ will work as if all the files were stored locally.
 - Read by offset
 
 #### Functions to implement (For now):
-- Remove file blocks
+- Metadata
 
 
 

@@ -1,7 +1,6 @@
 package main
 import "bazil.org/fuse/fs"
 
-// FS implements the hello world file system.
 type FS struct{
 	root *Dir
 }

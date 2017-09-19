@@ -81,7 +81,7 @@ func manageMesseges(conn net.Conn, path string) {
     	}
 
 		if msg.Type == "send" {
-			// create file block
+
 			filename := strconv.Itoa(int(msg.Number))
 			f, err := os.Create(filepath.Join(path, filename))
 			checkFatal(err)
@@ -95,22 +95,27 @@ func manageMesseges(conn net.Conn, path string) {
 			json.NewEncoder(conn).Encode(&send_ack)
 
 		} else if msg.Type == "recv" {
+			
 			filename := strconv.Itoa(int(msg.Number))
-			// search for file
 			dat, err := ioutil.ReadFile(filepath.Join(path, filename))
 			if err != nil {
 				log.Println(err)
 			}
-		    recv_ack := message{"recv_ack", dat, msg.Number}
 	    	log.Printf("Sending file: %s \n", filename)
+		    
+		    recv_ack := message{"recv_ack", dat, msg.Number}
 			json.NewEncoder(conn).Encode(&recv_ack)
 
 		} else if msg.Type == "delete" {
+			
 			filename := strconv.Itoa(int(msg.Number))
-			//delete the file
 	    	log.Printf("Removing file: %s \n", filename)
 			err := os.Remove(filepath.Join(path, filename))
 			checkError(err)
+
+			del_ack := message{"del_ack", []byte(""), msg.Number}
+			json.NewEncoder(conn).Encode(&del_ack)
+
 		}
     }
 }

@@ -89,3 +89,37 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	return nil
 
 }
+
+
+func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
+
+	// File truncation
+	if req.Valid.Size() {
+
+		numBlocksB4 := f.attributes.Blocks
+		log.Printf("Truncate size from %d to %d on file %s", f.attributes.Size, req.Size, f.name)
+		f.attributes.Size = req.Size
+		f.attributes.Blocks = Blocks(f.attributes.Size)
+		// remove rest of the blocks
+		range_block := RangeOfBlocks(f.attributes.Blocks,numBlocksB4-1)
+		if f.attributes.Blocks < numBlocksB4  {
+			for i := len(range_block)-1; i >= 0; i-- {
+				deleteBlock(f.dataNodes[range_block[i]])
+				f.dataNodes = append(f.dataNodes[:range_block[i]], f.dataNodes[range_block[i]+1:]...)
+			}
+
+
+		}
+
+	}
+	// Set the mode on the node
+	if req.Valid.Mode() {
+
+		log.Printf("Setting node %s Mode to %v", f.name, req.Mode)
+		f.attributes.Mode = req.Mode
+	}
+
+	resp.Attr = f.attributes
+	return nil
+
+}

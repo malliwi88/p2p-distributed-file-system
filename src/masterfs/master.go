@@ -106,6 +106,11 @@ func deleteBlock(addr string) {
 	conn, block := getConnBlock(addr)
 	m := message{"delete", []byte(""), block}
 	json.NewEncoder(conn).Encode(&m)
+
+	var ack message
+	decoder := json.NewDecoder(conn)
+ 	err := decoder.Decode(&ack)
+ 	checkError(err)
 }
 
 func getConnBlock(addr string) (net.Conn, int64) {

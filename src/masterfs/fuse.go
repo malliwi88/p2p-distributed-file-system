@@ -92,28 +92,50 @@ func RangeOfBlocks (min, max uint64) []uint64{
 
 func BlockCheck(offsetBlock uint64, dataNodes *[]string, startWrite uint64, endWrite uint64, blockStart uint64, buffer *[]byte) {
 	
+	var startData, endData, startBuff, endBuff uint64
 	if offsetBlock < uint64(len(*dataNodes)) {
 		dataBlock, err := recvBlock((*dataNodes)[offsetBlock])
 		checkError(err)
 		if endWrite > (blockStart+dataBlockSize) {
 			if startWrite >= blockStart && startWrite < (blockStart+dataBlockSize) { // 1st block
 				// datablock[0:starWrite] = do nothing
-				copy(dataBlock[Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,startWrite):Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart+dataBlockSize)] , (*buffer)[0:((blockStart+dataBlockSize)-startWrite)])
+				startData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,startWrite)
+				endData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart+dataBlockSize)
+				startBuff = 0
+				endBuff = ((blockStart+dataBlockSize)-startWrite)
+				copy(dataBlock[startData:endData] , (*buffer)[startBuff:endBuff])
 				*buffer = append((*buffer)[:0], (*buffer)[((blockStart+dataBlockSize)-startWrite):]...)
 				sendBlock((*dataNodes)[offsetBlock],dataBlock)
 			} else {
-				copy(dataBlock[Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart):Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart+dataBlockSize)] , (*buffer)[0:dataBlockSize])
+				startData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart)
+				endData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart+dataBlockSize)
+				startBuff = 0
+				endBuff = dataBlockSize
+				copy(dataBlock[startData:endData] , (*buffer)[startBuff:endBuff])
 				*buffer = append((*buffer)[:0], (*buffer)[dataBlockSize:]...)
 				sendBlock((*dataNodes)[offsetBlock],dataBlock)
 			}		
 		} else {
+			
+			if endWrite > uint64(len(dataBlock)) {
+				// extend
+				t := make([]byte, endWrite, endWrite)
+				copy(t, dataBlock)
+				dataBlock = t
+			}
+
 			if startWrite >= blockStart && startWrite < (blockStart+dataBlockSize) { // 1st block
 				// datablock[blockStart:starWrite] = do nothing
-				copy(dataBlock[Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,startWrite):Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,endWrite)] , (*buffer)[:])
+				startData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,startWrite)
+				endData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,endWrite)
+
+				copy(dataBlock[startData:endData] , (*buffer)[:])
 				*buffer = (*buffer)[:0]
 				sendBlock((*dataNodes)[offsetBlock],dataBlock)
 			} else {
-				copy(dataBlock[Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart):Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,endWrite)] , (*buffer)[:])
+				startData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart)
+				endData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,endWrite)
+				copy(dataBlock[startData:endData] , (*buffer)[:])
 				*buffer = (*buffer)[:0]
 				sendBlock((*dataNodes)[offsetBlock],dataBlock)
 			}

@@ -31,10 +31,9 @@ func TestWriteRead(t *testing.T) {
 	// Initialise
 	f := new(File)
 	f.InitNode()
-	size := 4170
-	data := []byte(RandStringBytes(size))
+	my_size := 4107
+	data := []byte(RandStringBytes(my_size))
 	ctx := context.TODO()
-
 	// Write
 	req := &fuse.WriteRequest{
 		Offset: 0,
@@ -45,13 +44,12 @@ func TestWriteRead(t *testing.T) {
 	if err != nil {
        t.Errorf("Error occurred: %s", err)
 	}
-	if resp.Size != size {
-       t.Errorf("Size was incorrect, got: %d, want: %d.", resp.Size, size)
+	if resp.Size != my_size {
+       t.Errorf("Size was incorrect, got: %d, want: %d.", resp.Size, my_size)
     }
-
 	//Read
  	rreq := &fuse.ReadRequest{
-		Offset: 0, Size: size,
+		Offset: 0, Size: my_size,
 	}
 	rresp := &fuse.ReadResponse{}
 	err = f.Read(ctx, rreq, rresp)
@@ -61,16 +59,192 @@ func TestWriteRead(t *testing.T) {
 	if !bytes.Equal(rresp.Data, data) {
 		t.Errorf("Data not equal")
 	}
+}
+
+func TestMultipleWrite(t *testing.T) {
+	
+	// Initialise
+	f := new(File)
+	f.InitNode()
+	my_size := 8192
+	data := []byte(RandStringBytes(my_size))
+	ctx := context.TODO()
+	// Write
+	for i := int64(0); i < 8192; i += 512 {
+			
+		req := &fuse.WriteRequest{
+			Offset: i,
+			Data:   data[i : i+512],
+		}
+		resp := &fuse.WriteResponse{}
+		err := f.Write(ctx, req, resp)
+		if err != nil {
+	       t.Errorf("Error occurred: %s", err)
+		}
+		if resp.Size != 512 {
+	       t.Errorf("Size was incorrect, got: %d, want: %d.", resp.Size, 512)
+	    }
+	}
+	if f.attributes.Size != uint64(my_size) {
+       t.Errorf("Size was incorrect, got: %d, want: %d.", f.attributes.Size, my_size)
+    }
+    if f.attributes.Blocks != uint64(16) {
+       t.Errorf("Size was incorrect, got: %d, want: %d.", f.attributes.Blocks, 16)
+    }
+	//Read
+ 	rreq := &fuse.ReadRequest{
+		Offset: 0, Size: my_size,
+	}
+	rresp := &fuse.ReadResponse{}
+	err := f.Read(ctx, rreq, rresp)
+	if err != nil {
+       t.Errorf("Error occurred: %s", err)
+	}
+	if !bytes.Equal(rresp.Data, data) {
+		t.Errorf("Data not equal")
+	}
+}
+
+
+
+func TestTruncateFile(t *testing.T) {
+	
+	// Initialise
+	f := new(File)
+	f.InitNode()
+	my_size := 4107
+	data := []byte(RandStringBytes(my_size))
+	ctx := context.TODO()
+	// Write
+	req := &fuse.WriteRequest{
+		Offset: 0,
+		Data:   data,
+	}
+	resp := &fuse.WriteResponse{}
+	err := f.Write(ctx, req, resp)
+	if err != nil {
+       t.Errorf("Error occurred: %s", err)
+	}
+	if resp.Size != my_size {
+       t.Errorf("Size was incorrect, got: %d, want: %d.", resp.Size, my_size)
+    }
+    // Truncate
+	treq := &fuse.SetattrRequest{Size: 1000, Valid: fuse.SetattrSize}
+	tresp := &fuse.SetattrResponse{Attr: f.attributes}
+	err = f.Setattr(ctx, treq, tresp)
+	if err != nil {
+       t.Errorf("Error occurred: %s", err)
+	}
+	if f.attributes.Size != uint64(1000) {
+       t.Errorf("Size was incorrect, got: %d, want: %d.", f.attributes.Size, 1000)
+    }
+    if f.attributes.Blocks != uint64(2) {
+       t.Errorf("Size was incorrect, got: %d, want: %d.", f.attributes.Blocks, 2)
+    }
+	//Read
+ 	rreq := &fuse.ReadRequest{
+		Offset: 0, Size: my_size,
+	}
+	rresp := &fuse.ReadResponse{}
+	err = f.Read(ctx, rreq, rresp)
+	if err != nil {
+       t.Errorf("Error occurred: %s", err)
+	}
+	if !bytes.Equal(rresp.Data, data[:1000]) {
+		t.Errorf("Data not equal")
+	}
 }	
 
 
+func TestOverWrite(t *testing.T) {
+	
+	// Initialise
+	f := new(File)
+	f.InitNode()
+	my_size := 4107
+	data := []byte(RandStringBytes(my_size))
+	newData := []byte(RandStringBytes(my_size))
+	ctx := context.TODO()
+	// Write
+	req := &fuse.WriteRequest{
+		Offset: 0,
+		Data:   data,
+	}
+	resp := &fuse.WriteResponse{}
+	err := f.Write(ctx, req, resp)
+	if err != nil {
+       t.Errorf("Error occurred: %s", err)
+	}
+	if resp.Size != my_size {
+       t.Errorf("Size was incorrect, got: %d, want: %d.", resp.Size, my_size)
+    }
 
+    req2 := &fuse.WriteRequest{
+		Offset: 0,
+		Data:   newData,
+	}
+	resp2 := &fuse.WriteResponse{}
+	err = f.Write(ctx, req2, resp2)
+	if err != nil {
+       t.Errorf("Error occurred: %s", err)
+	}
+	if resp.Size != my_size {
+       t.Errorf("Size was incorrect, got: %d, want: %d.", resp.Size, my_size)
+    }
+	//Read
+ 	rreq := &fuse.ReadRequest{
+		Offset: 0, Size: my_size,
+	}
+	rresp := &fuse.ReadResponse{}
+	err = f.Read(ctx, rreq, rresp)
+	if err != nil {
+       t.Errorf("Error occurred: %s", err)
+	}
+	if !bytes.Equal(rresp.Data, newData) {
+		t.Errorf("Data not equal")
+	}
+}
 
-
-// write by offset
-// req = &fuse.WriteRequest{
-// 	Offset: 510,
-// 	Data:   []byte("ran across the mat until he was very tired"),
-// }
-// resp = &fuse.WriteResponse{}
-// err = f.Write(ctx, req, resp)
+func TestWriteOffset(t *testing.T) {
+	
+	// Initialise
+	f := new(File)
+	f.InitNode()
+	data := []byte("the cat in the hat sat on the bat")
+	ctx := context.TODO()
+	// Write
+	req := &fuse.WriteRequest{
+		Offset: 0,
+		Data:   data,
+	}
+	resp := &fuse.WriteResponse{}
+	err := f.Write(ctx, req, resp)
+	if err != nil {
+       t.Errorf("Error occurred: %s", err)
+	}
+    // Write by Offset
+    req = &fuse.WriteRequest{
+		Offset: 19,
+		Data:   []byte("ran across the mat until he was very tired"),
+	}
+	resp = &fuse.WriteResponse{}
+	err = f.Write(ctx, req, resp)
+	if err != nil {
+       t.Errorf("Error occurred: %s", err)
+	}
+	//Read
+ 	rreq := &fuse.ReadRequest{
+		Offset: 0, Size: 61,
+	}
+	rresp := &fuse.ReadResponse{}
+	err = f.Read(ctx, rreq, rresp)
+	if err != nil {
+       t.Errorf("Error occurred: %s", err)
+	}
+	if !bytes.Equal(rresp.Data, []byte("the cat in the hat ran across the mat until he was very tired")) {
+		t.Errorf("Data not equal")
+	}
+	if len(rresp.Data) != 61 {
+		t.Errorf("Size was incorrect, got: %d, want: %d.", len(rresp.Data), 61)
+	}
+}
