@@ -23,6 +23,7 @@ will work as if all the files were stored locally.
 
 #### Functions to implement (For now):
 - Metadata
-
+- Encryption
+- Multiple copies of the same block on different IPs
 
 
