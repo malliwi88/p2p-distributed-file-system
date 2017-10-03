@@ -95,6 +95,7 @@ func BlockCheck(offsetBlock uint64, dataNodes *[]string, startWrite uint64, endW
 	var startData, endData, startBuff, endBuff uint64
 	if offsetBlock < uint64(len(*dataNodes)) {
 		dataBlock, err := recvBlock((*dataNodes)[offsetBlock])
+
 		checkError(err)
 		if endWrite > (blockStart+dataBlockSize) {
 			if startWrite >= blockStart && startWrite < (blockStart+dataBlockSize) { // 1st block
@@ -116,19 +117,22 @@ func BlockCheck(offsetBlock uint64, dataNodes *[]string, startWrite uint64, endW
 				sendBlock((*dataNodes)[offsetBlock],dataBlock)
 			}		
 		} else {
+
 			
-			if endWrite > uint64(len(dataBlock)) {
+			if endWrite-blockStart > uint64(len(dataBlock)) {
+
 				// extend
-				t := make([]byte, endWrite, endWrite)
+				t := make([]byte, endWrite-blockStart, endWrite-blockStart)
 				copy(t, dataBlock)
 				dataBlock = t
+				log.Println(len(dataBlock))
+
 			}
 
 			if startWrite >= blockStart && startWrite < (blockStart+dataBlockSize) { // 1st block
 				// datablock[blockStart:starWrite] = do nothing
 				startData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,startWrite)
 				endData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,endWrite)
-
 				copy(dataBlock[startData:endData] , (*buffer)[:])
 				*buffer = (*buffer)[:0]
 				sendBlock((*dataNodes)[offsetBlock],dataBlock)
