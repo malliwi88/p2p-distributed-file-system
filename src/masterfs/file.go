@@ -4,33 +4,35 @@ import (
 	"log"
 	"bazil.org/fuse"
 	"golang.org/x/net/context"
+	"encoding/json"
+	"os"
 )
 
-// File implements both Node and Handle for the hello file.
 type File struct{
 	Node
-	dataNodes [] string
+	DataNodes [] string
 }
 
 
 func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	
-	a.Inode = f.attributes.Inode
-	a.Mode = f.attributes.Mode
-	a.Size = f.attributes.Size
-	a.Blocks = f.attributes.Blocks
-	a.BlockSize = f.attributes.BlockSize
-	log.Println("Requested Attr for File", f.name, "has data size", f.attributes.Size, "has blocks", f.attributes.Blocks)
+	a.Inode = f.Attributes.Inode
+	a.Mode = f.Attributes.Mode
+	a.Size = f.Attributes.Size
+	a.Blocks = f.Attributes.Blocks
+	a.BlockSize = f.Attributes.BlockSize
+	log.Println("Requested Attr for File", f.Name, "has data size", f.Attributes.Size, "has blocks", f.Attributes.Blocks)
+	go f.SaveMetaFile()
 	return nil
 }
 
 
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 	
-	log.Printf("Read %d bytes from offset %d in file %s",req.Size, req.Offset, f.name)
+	log.Printf("Read %d bytes from offset %d in file %s",req.Size, req.Offset, f.Name)
 	limit := uint64(req.Offset) + uint64(req.Size)
-	if limit > f.attributes.Size {
-		limit = f.attributes.Size
+	if limit > f.Attributes.Size {
+		limit = f.Attributes.Size
 	}
 	start_block := Offset2Block(uint64(req.Offset))
 	end_block := Offset2Block(uint64(limit))
@@ -46,7 +48,7 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 
 	buff := make([]byte, 0, dataBlockSize*range_block)
 	for i := start_block; i <= end_block; i++ {
-		b, err := recvBlock(f.dataNodes[i])
+		b, err := recvBlock(f.DataNodes[i])
 		if err != nil {
 			return err
 		}
@@ -72,17 +74,17 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 
 		for _, value:= range range_block {
 			if len(buff) > 0{
-				BlockCheck(value,&f.dataNodes,write_offset,limit,dataBlockSize*value,&buff) // check if block exists overwrite else create
+				BlockCheck(value,&f.DataNodes,write_offset,limit,dataBlockSize*value,&buff) // check if block exists overwrite else create
 			}
 		}
 
-		f.attributes.Size = limit
-		f.attributes.Blocks = Blocks(f.attributes.Size)
+		f.Attributes.Size = limit
+		f.Attributes.Blocks = Blocks(f.Attributes.Size)
 		resp.Size = int(write_length)	
-		log.Printf("Wrote %d bytes offset by %d to file %s", write_length, write_offset, f.name)
+		log.Printf("Wrote %d bytes offset by %d to file %s", write_length, write_offset, f.Name)
 		
 	} else {
-		log.Println("No peers connected! Cannot write to file", f.name)
+		log.Println("No peers connected! Cannot write to file", f.Name)
 
 	}
 
@@ -95,31 +97,51 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 
 	// File truncation
 	if req.Valid.Size() {
-
-		numBlocksB4 := f.attributes.Blocks
-		log.Printf("Truncate size from %d to %d on file %s", f.attributes.Size, req.Size, f.name)
-		f.attributes.Size = req.Size
-		f.attributes.Blocks = Blocks(f.attributes.Size)
+		numBlocksB4 := f.Attributes.Blocks
+		log.Printf("Truncate size from %d to %d on file %s", f.Attributes.Size, req.Size, f.Name)
+		f.Attributes.Size = req.Size
+		f.Attributes.Blocks = Blocks(f.Attributes.Size)
 		// remove rest of the blocks
-		range_block := RangeOfBlocks(f.attributes.Blocks,numBlocksB4-1)
-		if f.attributes.Blocks < numBlocksB4  {
+		range_block := RangeOfBlocks(f.Attributes.Blocks,numBlocksB4-1)
+		if f.Attributes.Blocks < numBlocksB4  {
 			for i := len(range_block)-1; i >= 0; i-- {
-				deleteBlock(f.dataNodes[range_block[i]])
-				f.dataNodes = append(f.dataNodes[:range_block[i]], f.dataNodes[range_block[i]+1:]...)
+				deleteBlock(f.DataNodes[range_block[i]])
+				f.DataNodes = append(f.DataNodes[:range_block[i]], f.DataNodes[range_block[i]+1:]...)
 			}
-
-
 		}
-
 	}
 	// Set the mode on the node
 	if req.Valid.Mode() {
-
-		log.Printf("Setting node %s Mode to %v", f.name, req.Mode)
-		f.attributes.Mode = req.Mode
+		log.Printf("Setting node %s Mode to %v", f.Name, req.Mode)
+		f.Attributes.Mode = req.Mode
 	}
-
-	resp.Attr = f.attributes
+	resp.Attr = f.Attributes
 	return nil
+
+}
+
+func (f *File) SaveMetaFile() {
+
+	meta := &Meta{Name: f.Name, Attributes: f.Attributes, DataNodes: f.DataNodes}
+    j, err := json.Marshal(meta)
+    if err != nil {
+        log.Println("Error converting backup to json ",err)
+        return
+    }
+	handle, err := os.Create("/mnt/backup/"+"."+f.Name+".meta")
+	defer handle.Close()
+	if err != nil {
+	    log.Println("Error creating backup file ",err)
+	    return
+	}
+	handle.Chmod(0777)
+	_, err = handle.WriteString(string(j))
+	if err != nil {
+	    log.Println("Error saving backup file ",err)
+	    return
+	}
+	handle.Sync()
+	log.Println("Saving backup file")
+
 
 }

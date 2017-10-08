@@ -1,5 +1,7 @@
 package main
-import "bazil.org/fuse/fs"
+import (
+	"bazil.org/fuse/fs"
+)
 
 type FS struct{
 	root *Dir

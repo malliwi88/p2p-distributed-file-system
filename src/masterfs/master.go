@@ -1,6 +1,3 @@
-
-// WORKS FOR ONE FILE ONLY
-
 package main
 
 import (
@@ -136,6 +133,8 @@ func main() {
 	local_ip := interface_addr[0].String()
 	master := Peer{Ip: local_ip, Port: master_port}
 	fmt.Println("Master details: ", master)
+
+
 	go listen(master)
 	FUSE(mountpoint)
 }
