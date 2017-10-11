@@ -29,32 +29,37 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 	
-	log.Printf("Read %d bytes from offset %d in file %s",req.Size, req.Offset, f.Name)
-	limit := uint64(req.Offset) + uint64(req.Size)
-	if limit > f.Attributes.Size {
-		limit = f.Attributes.Size
-	}
-	start_block := Offset2Block(uint64(req.Offset))
-	end_block := Offset2Block(uint64(limit))
-	
-	if limit == uint64(req.Offset){
-		resp.Data = []byte{}
-		return nil
-	
-	} else if limit % dataBlockSize == uint64(0) && limit != uint64(0) {
-		end_block = end_block - uint64(1)	
-	}
-	range_block := end_block - start_block
-
-	buff := make([]byte, 0, dataBlockSize*range_block)
-	for i := start_block; i <= end_block; i++ {
-		b, err := recvBlock(f.DataNodes[i])
-		if err != nil {
-			return err
+	if len(connList) > 0 {
+		log.Printf("Read %d bytes from offset %d in file %s",req.Size, req.Offset, f.Name)
+		limit := uint64(req.Offset) + uint64(req.Size)
+		if limit > f.Attributes.Size {
+			limit = f.Attributes.Size
 		}
-		buff = append(buff, b...)
-	}	
-	resp.Data = buff[uint64(req.Offset) - start_block*dataBlockSize : limit - start_block*dataBlockSize]
+		start_block := Offset2Block(uint64(req.Offset))
+		end_block := Offset2Block(uint64(limit))
+		
+		if limit == uint64(req.Offset){
+			resp.Data = []byte{}
+			return nil
+		
+		} else if limit % dataBlockSize == uint64(0) && limit != uint64(0) {
+			end_block = end_block - uint64(1)	
+		}
+		range_block := end_block - start_block
+
+		buff := make([]byte, 0, dataBlockSize*range_block)
+		for i := start_block; i <= end_block; i++ {
+			b, err := recvBlock(f.DataNodes[i])
+			if err != nil {
+				return err
+			}
+			buff = append(buff, b...)
+		}	
+		resp.Data = buff[uint64(req.Offset) - start_block*dataBlockSize : limit - start_block*dataBlockSize]
+
+	} else {
+		log.Println("No peers connected! Cannot write to file", f.Name)
+	}
 	return nil
 }
 
@@ -65,7 +70,6 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 		write_length := uint64(len(req.Data)) 						// data write length
 		write_offset := uint64(req.Offset)     						// offset of the write
 		limit := write_offset + write_length             			// The final length of the data
-
 		start_block := Offset2Block(write_offset)
 		end_block := Offset2Block(limit)
 		range_block := RangeOfBlocks(start_block,end_block)  // range of blocks to change or create

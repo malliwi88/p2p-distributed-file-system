@@ -16,6 +16,13 @@ import (
 type Peer struct {
 	Ip string
 	Port string
+	NetType string
+}
+func (p *Peer) String() string {
+	return p.Ip + ":" + p.Port
+}
+func (p *Peer) Network() string {
+	return p.NetType
 }
 
 type message struct {
@@ -40,32 +47,42 @@ func main() {
 
 	master_port := "8000"
 	master_ip := "127.0.0.1"
-	master := Peer{Ip: master_ip, Port: master_port}
-	// get current working directory
+	master := Peer{Ip: master_ip, Port: master_port, NetType: "tcp"}
+	conn, path := connectToMaster(master)
+	manageMesseges(conn, path)
+}
+
+func connectToMaster(dst Peer) (net.Conn, string) {
+	
+	// fix ip and dial
+	localAddr, err := net.ResolveIPAddr("ip", "127.0.0.1")
+    if err != nil {
+        panic(err)
+    }
+    localTCPAddr := net.TCPAddr{
+        IP: localAddr.IP,
+   	    Port: 9000}
+	d := &net.Dialer{LocalAddr: &localTCPAddr,Timeout: time.Duration(10)*time.Second}
+    
+    // get current working directory
 	ex, err := os.Executable()		
     if err != nil {
         panic(err)
     }
     exPath := path.Dir(ex)
-    path := exPath + "/" + master.Ip + ":" + master.Port
-    // create folder with master's address
-    if _, err := os.Stat(path); os.IsNotExist(err) {
-		os.Mkdir(path, 0777)
-	}
-
-	conn := connectToMaster(master)
-    manageMesseges(conn, path)
-}
-
-func connectToMaster(dst Peer) net.Conn {
-    conn, err := net.DialTimeout("tcp", dst.Ip + ":" + dst.Port, time.Duration(10) * time.Second)
+	myDir := exPath + "/" + dst.String()
+    conn, err := d.Dial(dst.Network(),dst.String())   	
    	if err != nil {
 		log.Fatalln(err)
 
     } else {
         log.Println("Connected to master")
+	    // create folder with master's address
+	    if _, err := os.Stat(myDir); os.IsNotExist(err) {
+			os.Mkdir(myDir, 0777)
+		}
 	}
-	return conn
+	return conn, myDir
 }
 
 func manageMesseges(conn net.Conn, path string) {
