@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"io"
 	"strconv"
+	"flag"
 )
 
 type Peer struct {
@@ -44,24 +45,25 @@ func checkFatal(e error){
 }
 
 func main() {
-
+	myport := flag.Int("port", 9000, "Port to run this node on")
+	flag.Parse()
 	master_port := "8000"
 	master_ip := "127.0.0.1"
 	master := Peer{Ip: master_ip, Port: master_port, NetType: "tcp"}
-	conn, path := connectToMaster(master)
+	conn, path := connectToMaster(master,*myport)
 	manageMesseges(conn, path)
 }
 
-func connectToMaster(dst Peer) (net.Conn, string) {
+func connectToMaster(dst Peer, myport int) (net.Conn, string) {
 	
 	// fix ip and dial
-	localAddr, err := net.ResolveIPAddr("ip", "127.0.0.1")
+	slaveAddr, err := net.ResolveIPAddr("ip", "127.0.0.1")
     if err != nil {
         panic(err)
     }
     localTCPAddr := net.TCPAddr{
-        IP: localAddr.IP,
-   	    Port: 9000}
+        IP: slaveAddr.IP,
+   	    Port: myport}
 	d := &net.Dialer{LocalAddr: &localTCPAddr,Timeout: time.Duration(10)*time.Second}
     
     // get current working directory

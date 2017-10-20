@@ -10,7 +10,8 @@ import (
 
 type File struct{
 	Node
-	DataNodes [] string
+	DataNodes map[uint64][]string
+	Replicas int
 }
 
 
@@ -46,17 +47,15 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 			end_block = end_block - uint64(1)	
 		}
 		range_block := end_block - start_block
-
 		buff := make([]byte, 0, dataBlockSize*range_block)
 		for i := start_block; i <= end_block; i++ {
-			b, err := recvBlock(f.DataNodes[i])
+			b, err := recvBlock((f.DataNodes[i])[0])				// always receiving first replica!
 			if err != nil {
 				return err
 			}
 			buff = append(buff, b...)
 		}	
 		resp.Data = buff[uint64(req.Offset) - start_block*dataBlockSize : limit - start_block*dataBlockSize]
-
 	} else {
 		log.Println("No peers connected! Cannot write to file", f.Name)
 	}
@@ -75,13 +74,12 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 		range_block := RangeOfBlocks(start_block,end_block)  // range of blocks to change or create
 		buff := make([]byte, len(req.Data))
 		copy(buff[:], req.Data[:])
-
+		numReplicas := f.Replicas
 		for _, value:= range range_block {
 			if len(buff) > 0{
-				BlockCheck(value,&f.DataNodes,write_offset,limit,dataBlockSize*value,&buff) // check if block exists overwrite else create
+				BlockCheck(value,&f.DataNodes,write_offset,limit,dataBlockSize*value,&buff,numReplicas) // check if block exists overwrite else create
 			}
 		}
-
 		f.Attributes.Size = limit
 		f.Attributes.Blocks = Blocks(f.Attributes.Size)
 		resp.Size = int(write_length)	
@@ -109,8 +107,12 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 		range_block := RangeOfBlocks(f.Attributes.Blocks,numBlocksB4-1)
 		if f.Attributes.Blocks < numBlocksB4  {
 			for i := len(range_block)-1; i >= 0; i-- {
-				deleteBlock(f.DataNodes[range_block[i]])
-				f.DataNodes = append(f.DataNodes[:range_block[i]], f.DataNodes[range_block[i]+1:]...)
+
+				for j := 0; j < f.Replicas; j++{
+					go deleteBlock(f.DataNodes[range_block[i]][j])
+				}
+				// f.DataNodes = append(f.DataNodes[:range_block[i]], f.DataNodes[range_block[i]+1:]...)
+				delete(f.DataNodes, range_block[i])
 			}
 		}
 	}
@@ -126,7 +128,7 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 
 func (f *File) SaveMetaFile() {
 
-	meta := &Meta{Name: f.Name, Attributes: f.Attributes, DataNodes: f.DataNodes}
+	meta := &Meta{Name: f.Name, Attributes: f.Attributes, DataNodes: f.DataNodes, Replicas: f.Replicas}
     j, err := json.Marshal(meta)
     if err != nil {
         log.Println("Error converting backup to json ",err)

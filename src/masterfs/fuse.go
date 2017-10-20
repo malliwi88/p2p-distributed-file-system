@@ -15,7 +15,7 @@ import (
 
 // variables
 var dataBlockSize uint64 = 512
-var blockNum int = 0
+var blockIdentifier uint64 = 0
 var inode uint64 = 0
 
 // structures
@@ -25,9 +25,10 @@ type Node struct {
 }
 
 type Meta struct {
-    	Name   string
-    	Attributes fuse.Attr
-    	DataNodes []string
+	Name   string
+	Attributes fuse.Attr
+	DataNodes map[uint64][]string
+	Replicas int
 }
 
 
@@ -112,11 +113,20 @@ func RangeOfBlocks (min, max uint64) []uint64{
     return a
 }
 
-func BlockCheck(offsetBlock uint64, dataNodes *[]string, startWrite uint64, endWrite uint64, blockStart uint64, buffer *[]byte) {
+func Normalize(OldMin,OldMax uint64,NewMin,NewMax uint64,OldValue uint64) uint64{
+	
+	OldRange := (OldMax - OldMin)  
+	NewRange := (NewMax - NewMin)  
+	NewValue := (((OldValue - OldMin) * NewRange) / OldRange) + NewMin
+	return NewValue	
+}
+
+
+func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]string, startWrite uint64, endWrite uint64, blockStart uint64, buffer *[]byte, numReplicas int) {
 	
 	var startData, endData, startBuff, endBuff uint64
 	if offsetBlock < uint64(len(*dataNodes)) {
-		dataBlock, err := recvBlock((*dataNodes)[offsetBlock])
+		dataBlock, err := recvBlock((*dataNodes)[offsetBlock][0])
 
 		checkError(err)
 		if endWrite > (blockStart+dataBlockSize) {
@@ -128,7 +138,9 @@ func BlockCheck(offsetBlock uint64, dataNodes *[]string, startWrite uint64, endW
 				endBuff = ((blockStart+dataBlockSize)-startWrite)
 				copy(dataBlock[startData:endData] , (*buffer)[startBuff:endBuff])
 				*buffer = append((*buffer)[:0], (*buffer)[((blockStart+dataBlockSize)-startWrite):]...)
-				sendBlock((*dataNodes)[offsetBlock],dataBlock)
+				for i := 0; i < numReplicas; i++{
+					go sendBlock((*dataNodes)[offsetBlock][i],dataBlock)
+				}
 			} else {
 				startData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart)
 				endData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart+dataBlockSize)
@@ -136,34 +148,35 @@ func BlockCheck(offsetBlock uint64, dataNodes *[]string, startWrite uint64, endW
 				endBuff = dataBlockSize
 				copy(dataBlock[startData:endData] , (*buffer)[startBuff:endBuff])
 				*buffer = append((*buffer)[:0], (*buffer)[dataBlockSize:]...)
-				sendBlock((*dataNodes)[offsetBlock],dataBlock)
+				for i := 0; i < numReplicas; i++{
+					go sendBlock((*dataNodes)[offsetBlock][i],dataBlock)
+				}
 			}		
 		} else {
 
-			
 			if endWrite-blockStart > uint64(len(dataBlock)) {
-
 				// extend
 				t := make([]byte, endWrite-blockStart, endWrite-blockStart)
 				copy(t, dataBlock)
 				dataBlock = t
-				log.Println(len(dataBlock))
-
 			}
-
 			if startWrite >= blockStart && startWrite < (blockStart+dataBlockSize) { // 1st block
 				// datablock[blockStart:starWrite] = do nothing
 				startData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,startWrite)
 				endData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,endWrite)
 				copy(dataBlock[startData:endData] , (*buffer)[:])
 				*buffer = (*buffer)[:0]
-				sendBlock((*dataNodes)[offsetBlock],dataBlock)
+				for i := 0; i < numReplicas; i++{
+					go sendBlock((*dataNodes)[offsetBlock][i],dataBlock)
+				}
 			} else {
 				startData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart)
 				endData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,endWrite)
 				copy(dataBlock[startData:endData] , (*buffer)[:])
 				*buffer = (*buffer)[:0]
-				sendBlock((*dataNodes)[offsetBlock],dataBlock)
+				for i := 0; i < numReplicas; i++{
+					go sendBlock((*dataNodes)[offsetBlock][i],dataBlock)
+				}
 			}
 		}
 		
@@ -172,27 +185,36 @@ func BlockCheck(offsetBlock uint64, dataNodes *[]string, startWrite uint64, endW
 		peerNum := 0
 		if len(connList) > 0 {
 			for _, c := range chunks {
-				*dataNodes = append(*dataNodes,connList[peerNum].RemoteAddr().String() + "/" + strconv.Itoa(blockNum))
-				sendBlock(connList[peerNum].RemoteAddr().String() + "/" + strconv.Itoa(blockNum),c)
-				blockNum += 1
-				if (peerNum+1) == len(connList){
-					peerNum = 0
-				} else {
+
+				for i := 0; i < numReplicas; i++ {
+					(*dataNodes)[blockIdentifier] = append((*dataNodes)[blockIdentifier],connList[peerNum].RemoteAddr().String() + "/" + strconv.Itoa(int(blockIdentifier)))
+					go sendBlock(connList[peerNum].RemoteAddr().String() + "/" + strconv.Itoa(int(blockIdentifier)),c)
 					peerNum += 1
+					peerNum = peerNum % len(connList)
 				}
+					blockIdentifier += 1
+				
+				
 			}
 			*buffer = (*buffer)[:0]
 		}
 	}
 }
 
-func Normalize(OldMin,OldMax uint64,NewMin,NewMax uint64,OldValue uint64) uint64{
-	
-	OldRange := (OldMax - OldMin)  
-	NewRange := (NewMax - NewMin)  
-	NewValue := (((OldValue - OldMin) * NewRange) / OldRange) + NewMin
-	return NewValue	
+
+func InterruptHandler(mountpoint string, FileSystem *FS) {
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	<-sigs
+	log.Println("\nShutting down fuse server!\n")
+	err := fuse.Unmount(mountpoint)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
 }
+
 
 
 func FUSE(mountpoint string) {
@@ -216,6 +238,7 @@ func FUSE(mountpoint string) {
     	filemeta.Node.Name = meta.Name
     	filemeta.DataNodes = meta.DataNodes
     	filemeta.Node.Attributes = meta.Attributes
+    	filemeta.Replicas = meta.Replicas
 		fileArray = append(fileArray,&filemeta)
 	}
 	////////////////////////////////////////////////////
@@ -246,16 +269,4 @@ func FUSE(mountpoint string) {
 
 }
 
-func InterruptHandler(mountpoint string, FileSystem *FS) {
-
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	<-sigs
-	log.Println("\nShutting down fuse server!\n")
-	err := fuse.Unmount(mountpoint)
-	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
-	}
-}
 

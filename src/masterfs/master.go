@@ -74,10 +74,10 @@ func handler(conn net.Conn) {
 
 func sendBlock(addr string, data []byte) {
 	
+	encrypted_data := Encrypt(data,[]byte("123"),int64(len(data)))
 	conn, block := getConnBlock(addr)
-	m := message{"send", data, block}	
+	m := message{"send", encrypted_data, block}	
 	json.NewEncoder(conn).Encode(&m)
-	
 	var ack message
 	decoder := json.NewDecoder(conn)
  	err := decoder.Decode(&ack)
@@ -95,7 +95,8 @@ func recvBlock(addr string) ([]byte, error) {
 	decoder := json.NewDecoder(conn)
  	err := decoder.Decode(&ack)
  	checkError(err)
-	return ack.Data, err
+ 	decrypted_data := Decrypt(ack.Data,[]byte("123"))
+	return decrypted_data, err
 }
 
 func deleteBlock(addr string) {
