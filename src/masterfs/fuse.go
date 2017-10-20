@@ -187,8 +187,8 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]string, startWrite u
 			for _, c := range chunks {
 
 				for i := 0; i < numReplicas; i++ {
-					(*dataNodes)[blockIdentifier] = append((*dataNodes)[blockIdentifier],connList[peerNum].RemoteAddr().String() + "/" + strconv.Itoa(int(blockIdentifier)))
-					go sendBlock(connList[peerNum].RemoteAddr().String() + "/" + strconv.Itoa(int(blockIdentifier)),c)
+					(*dataNodes)[blockIdentifier] = append((*dataNodes)[blockIdentifier],connList[peerNum].Conn.RemoteAddr().String() + "/" + strconv.Itoa(int(blockIdentifier)))
+					go sendBlock(connList[peerNum].Conn.RemoteAddr().String() + "/" + strconv.Itoa(int(blockIdentifier)),c)
 					peerNum += 1
 					peerNum = peerNum % len(connList)
 				}

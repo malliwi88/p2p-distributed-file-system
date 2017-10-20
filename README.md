@@ -22,8 +22,8 @@ will work as if all the files were stored locally.
 - Read by offset
 
 #### Functions to implement (For now):
-- Metadata
-- Encryption
+- Load balancing
+- Fault tolerance
 - Multiple copies of the same block on different IPs
 
 
