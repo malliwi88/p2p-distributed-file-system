@@ -10,10 +10,9 @@ import (
 
 type File struct{
 	Node
-	DataNodes map[uint64][]string
+	DataNodes map[uint64][]*Peer
 	Replicas int
 }
-
 
 func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	
@@ -30,8 +29,8 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 	
-	if len(connList) > 0 {
-		log.Printf("Read %d bytes from offset %d in file %s",req.Size, req.Offset, f.Name)
+if len(connList) > 0 {
+		log.Printf("Read %d bytes from offset %d from file %s",req.Size, req.Offset, f.Name)
 		limit := uint64(req.Offset) + uint64(req.Size)
 		if limit > f.Attributes.Size {
 			limit = f.Attributes.Size
@@ -49,11 +48,18 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 		range_block := end_block - start_block
 		buff := make([]byte, 0, dataBlockSize*range_block)
 		for i := start_block; i <= end_block; i++ {
-			b, err := recvBlock((f.DataNodes[i])[0])				// always receiving first replica!
-			if err != nil {
-				return err
+			sortPeers("data",f.DataNodes[i])	
+			for len(f.DataNodes[i]) != 0 {
+				b, err := recvBlock((f.DataNodes[i])[0],i)				// always receiving first replica!
+				if err != nil {
+					log.Println("Peer disconnected!")
+					f.DataNodes[i] = append(f.DataNodes[i][:0], f.DataNodes[i][0+1:]...)	// delete the disconnected
+				} else {
+					buff = append(buff, b...)
+					break
+				}
 			}
-			buff = append(buff, b...)
+
 		}	
 		resp.Data = buff[uint64(req.Offset) - start_block*dataBlockSize : limit - start_block*dataBlockSize]
 	} else {
@@ -109,7 +115,7 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 			for i := len(range_block)-1; i >= 0; i-- {
 
 				for j := 0; j < f.Replicas; j++{
-					go deleteBlock(f.DataNodes[range_block[i]][j])
+					go deleteBlock(f.DataNodes[range_block[i]][j], range_block[i])
 				}
 				// f.DataNodes = append(f.DataNodes[:range_block[i]], f.DataNodes[range_block[i]+1:]...)
 				delete(f.DataNodes, range_block[i])
@@ -134,7 +140,7 @@ func (f *File) SaveMetaFile() {
         log.Println("Error converting backup to json ",err)
         return
     }
-	handle, err := os.Create("/mnt/backup/"+"."+f.Name+".meta")
+	handle, err := os.Create("/mnt/backup/"+f.Name+".meta")
 	defer handle.Close()
 	if err != nil {
 	    log.Println("Error creating backup file ",err)

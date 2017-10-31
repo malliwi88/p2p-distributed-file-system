@@ -7,6 +7,7 @@ import (
 	"golang.org/x/net/context"
 	"fmt"
 	"bytes"
+	"time"
 )
 
 func TestInit(t *testing.T) {
@@ -19,12 +20,56 @@ func TestInit(t *testing.T) {
 	go listen(master)
 	for {
 
-		if len(connList) != 0 {
+		if len(connList) == 2 {
 			break
 		}
 
 	}
 }
+
+func TestFaultTolerance(t *testing.T) {
+	
+	// Initialise
+	f := new(File)
+	f.DataNodes = make(map[uint64][]*Peer)
+	f.Replicas = 2		// number of replicas under user's control
+	f.InitNode()
+
+	my_size := 10
+	data := []byte(RandStringBytes(my_size))
+	ctx := context.TODO()
+	// Write
+	req := &fuse.WriteRequest{
+		Offset: 0,
+		Data:   data,
+	}
+	resp := &fuse.WriteResponse{}
+	err := f.Write(ctx, req, resp)
+	if err != nil {
+       t.Errorf("Error occurred: %s", err)
+	}
+	if resp.Size != my_size {
+       t.Errorf("Size was incorrect, got: %d, want: %d.", resp.Size, my_size)
+    }
+    
+    time.Sleep(10)
+    f.DataNodes[0][0].Conn.Close()
+
+	//Read
+ 	rreq := &fuse.ReadRequest{
+		Offset: 0, Size: my_size,
+	}
+	rresp := &fuse.ReadResponse{}
+	err = f.Read(ctx, rreq, rresp)
+	if err != nil {
+       t.Errorf("Error occurred: %s", err)
+	}
+	if !bytes.Equal(rresp.Data, data) {
+		t.Errorf("Data not equal")
+	}
+}
+
+/*
 
 func TestWriteRead(t *testing.T) {
 	
@@ -248,3 +293,5 @@ func TestWriteOffset(t *testing.T) {
 		t.Errorf("Size was incorrect, got: %d, want: %d.", len(rresp.Data), 61)
 	}
 }
+
+*/

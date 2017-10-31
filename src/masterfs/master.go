@@ -8,7 +8,6 @@ import (
 	"strings"
 	"flag"
 	"encoding/json"
-	"strconv"
 	"time"
 	"sort"
 )
@@ -29,7 +28,7 @@ type Peer struct {
 type message struct {
 	Type string `json:"type"`
 	Data []byte `json:"data"`
-	Number int64 `json:"number"`
+	Number uint64 `json:"number"`
 }
 
 // functions
@@ -77,10 +76,10 @@ func handler(conn net.Conn) {
 }
 
 
-func sendBlock(addr string, data []byte) {
+func sendBlock(peer *Peer, data []byte, block uint64) {
 	
 	encrypted_data := Encrypt(data,[]byte("123"),int64(len(data)))
-	peer, block := getConnBlock(addr)
+	// peer, block := getConnBlock(addr)
 	conn := peer.Conn
 	m := message{"send", encrypted_data, block}	
 	json.NewEncoder(conn).Encode(&m)
@@ -99,30 +98,24 @@ func sendBlock(addr string, data []byte) {
 
 }
 
-func recvBlock(addr string) ([]byte, error) {
-	
-	peer, block := getConnBlock(addr)
+func recvBlock(peer *Peer, block uint64) ([]byte, error) {
+
 	conn := peer.Conn
 	m := message{"recv", []byte(""), block}
-	json.NewEncoder(conn).Encode(&m)
-	
-	start_time := time.Now()
-	
+	err := json.NewEncoder(conn).Encode(&m)
+	start_time := time.Now()	
 	var ack message
 	decoder := json.NewDecoder(conn)
- 	
  	peer.ResponseTime = time.Since(start_time)
-
- 	err := decoder.Decode(&ack)
- 	checkError(err)
+ 	err = decoder.Decode(&ack)
  	decrypted_data := Decrypt(ack.Data,[]byte("123"))
  	
 	return decrypted_data, err
 }
 
-func deleteBlock(addr string) {
+func deleteBlock(peer *Peer, block uint64) {
 	
-	peer, block := getConnBlock(addr)
+	// peer, block := getConnBlock(addr)
 	conn := peer.Conn
 	m := message{"delete", []byte(""), block}
 	json.NewEncoder(conn).Encode(&m)
@@ -139,32 +132,32 @@ func deleteBlock(addr string) {
 
 }
 
-func getConnBlock(addr string) (*Peer, int64) {
+// func getConnBlock(addr *Peer) (*Peer, int64) {
 	
-	s_addr := strings.Split(addr, "/")
-	var conn *Peer
-	for _, p := range connList {
-		if p.Conn.RemoteAddr().String() == s_addr[0] {
-			conn = p
-		}
-	}
-	block, err := strconv.Atoi(s_addr[1])
-	checkError(err)
-	return conn, int64(block)
-}
+// 	s_addr := strings.Split(addr, "/")
+// 	var conn *Peer
+// 	for _, p := range connList {
+// 		if p.Conn.RemoteAddr().String() == s_addr[0] {
+// 			conn = p
+// 		}
+// 	}
+// 	block, err := strconv.Atoi(s_addr[1])
+// 	checkError(err)
+// 	return conn, int64(block)
+// }
 
-func sortPeers(loadType string) {
+func sortPeers(loadType string, peerArray []*Peer) {
 
-	if loadType == "data"{
+	if loadType == "data" {
 		
-		sort.Slice(connList[:], func(i, j int) bool {
-    		return connList[i].DataSent < connList[j].DataSent
+		sort.Slice(peerArray[:], func(i, j int) bool {
+    		return peerArray[i].DataSent < peerArray[j].DataSent
 		})
 
 	} else if loadType == "time" {
 
-		sort.Slice(connList[:], func(i, j int) bool {
-    		return connList[i].DataSent < connList[j].DataSent
+		sort.Slice(peerArray[:], func(i, j int) bool {
+    		return peerArray[i].ResponseTime < peerArray[j].ResponseTime
 		})
 
 	}

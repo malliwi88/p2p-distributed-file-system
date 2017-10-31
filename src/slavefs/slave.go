@@ -29,7 +29,7 @@ func (p *Peer) Network() string {
 type message struct {
 	Type string `json:"type"`
 	Data []byte `json:"data"`
-	Number int64 `json:"number"`
+	Number uint64 `json:"number"`
 }
 
 func checkError(e error){
@@ -72,7 +72,7 @@ func connectToMaster(dst Peer, myport int) (net.Conn, string) {
         panic(err)
     }
     exPath := path.Dir(ex)
-	myDir := exPath + "/" + dst.String()
+	myDir := exPath + "/" + "<" + strconv.Itoa(myport) + ">" + dst.String()
     conn, err := d.Dial(dst.Network(),dst.String())   	
    	if err != nil {
 		log.Fatalln(err)
@@ -135,6 +135,9 @@ func manageMesseges(conn net.Conn, path string) {
 			del_ack := message{"del_ack", []byte(""), msg.Number}
 			json.NewEncoder(conn).Encode(&del_ack)
 
+		} else if msg.Type == "ping" {
+			ping_ack := message{"ping_ack", []byte(""), 0}
+			json.NewEncoder(conn).Encode(&ping_ack)
 		}
     }
 }

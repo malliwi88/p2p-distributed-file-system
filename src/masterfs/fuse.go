@@ -4,7 +4,6 @@ import (
 	"log"
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
-	"strconv"
 	"os"
 	"os/signal"
 	"syscall"
@@ -20,14 +19,14 @@ var inode uint64 = 0
 
 // structures
 type Node struct {
-	Name  string
+	Name string
 	Attributes fuse.Attr
 }
 
 type Meta struct {
 	Name   string
 	Attributes fuse.Attr
-	DataNodes map[uint64][]string
+	DataNodes map[uint64][]*Peer
 	Replicas int
 }
 
@@ -122,13 +121,24 @@ func Normalize(OldMin,OldMax uint64,NewMin,NewMax uint64,OldValue uint64) uint64
 }
 
 
-func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]string, startWrite uint64, endWrite uint64, blockStart uint64, buffer *[]byte, numReplicas int) {
+func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]*Peer, startWrite uint64, endWrite uint64, blockStart uint64, buffer *[]byte, numReplicas int) {
 	
 	var startData, endData, startBuff, endBuff uint64
 	if offsetBlock < uint64(len(*dataNodes)) {
-		dataBlock, err := recvBlock((*dataNodes)[offsetBlock][0])
+		sortPeers("data", (*dataNodes)[offsetBlock])
+		// for j := 0; j < len((*dataNodes)[offsetBlock]); j++ {
+		// 	// continue if errors, else break
+		// 	m := message{"ping", []byte(""), 0}
+		// 	json.NewEncoder(conn).Encode(&m)
 
+		// 	var ack message
+		// 	decoder := json.NewDecoder(conn)
+		 	
+		//  	err := decoder.Decode(&ack)
+		// }
+		dataBlock, err := recvBlock((*dataNodes)[offsetBlock][0], offsetBlock)
 		checkError(err)
+		
 		if endWrite > (blockStart+dataBlockSize) {
 			if startWrite >= blockStart && startWrite < (blockStart+dataBlockSize) { // 1st block
 				// datablock[0:starWrite] = do nothing
@@ -139,7 +149,7 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]string, startWrite u
 				copy(dataBlock[startData:endData] , (*buffer)[startBuff:endBuff])
 				*buffer = append((*buffer)[:0], (*buffer)[((blockStart+dataBlockSize)-startWrite):]...)
 				for i := 0; i < numReplicas; i++{
-					go sendBlock((*dataNodes)[offsetBlock][i],dataBlock)
+					go sendBlock((*dataNodes)[offsetBlock][i], dataBlock, offsetBlock)
 				}
 			} else {
 				startData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart)
@@ -149,7 +159,7 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]string, startWrite u
 				copy(dataBlock[startData:endData] , (*buffer)[startBuff:endBuff])
 				*buffer = append((*buffer)[:0], (*buffer)[dataBlockSize:]...)
 				for i := 0; i < numReplicas; i++{
-					go sendBlock((*dataNodes)[offsetBlock][i],dataBlock)
+					go sendBlock((*dataNodes)[offsetBlock][i], dataBlock, offsetBlock)
 				}
 			}		
 		} else {
@@ -167,7 +177,7 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]string, startWrite u
 				copy(dataBlock[startData:endData] , (*buffer)[:])
 				*buffer = (*buffer)[:0]
 				for i := 0; i < numReplicas; i++{
-					go sendBlock((*dataNodes)[offsetBlock][i],dataBlock)
+					go sendBlock((*dataNodes)[offsetBlock][i], dataBlock, offsetBlock)
 				}
 			} else {
 				startData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart)
@@ -175,7 +185,7 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]string, startWrite u
 				copy(dataBlock[startData:endData] , (*buffer)[:])
 				*buffer = (*buffer)[:0]
 				for i := 0; i < numReplicas; i++{
-					go sendBlock((*dataNodes)[offsetBlock][i],dataBlock)
+					go sendBlock((*dataNodes)[offsetBlock][i], dataBlock, offsetBlock)
 				}
 			}
 		}
@@ -183,12 +193,17 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]string, startWrite u
 	} else {
 		chunks := Split(*buffer,int(dataBlockSize))
 		peerNum := 0
+		if numReplicas > len(connList) {
+			numReplicas = len(connList)
+		}
 		if len(connList) > 0 {
 			for _, c := range chunks {
+				sortPeers("data", connList)
 
 				for i := 0; i < numReplicas; i++ {
-					(*dataNodes)[blockIdentifier] = append((*dataNodes)[blockIdentifier],connList[peerNum].Conn.RemoteAddr().String() + "/" + strconv.Itoa(int(blockIdentifier)))
-					go sendBlock(connList[peerNum].Conn.RemoteAddr().String() + "/" + strconv.Itoa(int(blockIdentifier)),c)
+
+					(*dataNodes)[blockIdentifier] = append((*dataNodes)[blockIdentifier], connList[peerNum])
+					go sendBlock(connList[peerNum], c, blockIdentifier)
 					peerNum += 1
 					peerNum = peerNum % len(connList)
 				}

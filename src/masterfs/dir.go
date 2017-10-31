@@ -43,7 +43,7 @@ func (d *Dir) Lookup(ctx context.Context, Name string) (fs.Node, error) { //** f
 func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
 	log.Println("Create request for Name", req.Name)
 	f := &File{Node: Node{Name: req.Name}}
-	f.DataNodes = make(map[uint64][]string)
+	f.DataNodes = make(map[uint64][]*Peer)
 	f.Replicas = 2		// number of replicas under user's control
 	f.InitNode()
 	if d.files != nil {
