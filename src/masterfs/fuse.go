@@ -121,7 +121,7 @@ func Normalize(OldMin,OldMax uint64,NewMin,NewMax uint64,OldValue uint64) uint64
 }
 
 
-func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]*Peer, startWrite uint64, endWrite uint64, blockStart uint64, buffer *[]byte, numReplicas int) {
+func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]*Peer, startWrite uint64, endWrite uint64, blockStart uint64, buffer *[]byte, numReplicas *int) {
 	
 	var startData, endData, startBuff, endBuff uint64
 	if offsetBlock < uint64(len(*dataNodes)) {
@@ -148,8 +148,8 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]*Peer, startWrite ui
 				endBuff = ((blockStart+dataBlockSize)-startWrite)
 				copy(dataBlock[startData:endData] , (*buffer)[startBuff:endBuff])
 				*buffer = append((*buffer)[:0], (*buffer)[((blockStart+dataBlockSize)-startWrite):]...)
-				for i := 0; i < numReplicas; i++{
-					go sendBlock((*dataNodes)[offsetBlock][i], dataBlock, offsetBlock)
+				for i := 0; i < *numReplicas; i++{
+					sendBlock((*dataNodes)[offsetBlock][i], dataBlock, offsetBlock)
 				}
 			} else {
 				startData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart)
@@ -158,8 +158,8 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]*Peer, startWrite ui
 				endBuff = dataBlockSize
 				copy(dataBlock[startData:endData] , (*buffer)[startBuff:endBuff])
 				*buffer = append((*buffer)[:0], (*buffer)[dataBlockSize:]...)
-				for i := 0; i < numReplicas; i++{
-					go sendBlock((*dataNodes)[offsetBlock][i], dataBlock, offsetBlock)
+				for i := 0; i < *numReplicas; i++{
+					sendBlock((*dataNodes)[offsetBlock][i], dataBlock, offsetBlock)
 				}
 			}		
 		} else {
@@ -176,16 +176,16 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]*Peer, startWrite ui
 				endData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,endWrite)
 				copy(dataBlock[startData:endData] , (*buffer)[:])
 				*buffer = (*buffer)[:0]
-				for i := 0; i < numReplicas; i++{
-					go sendBlock((*dataNodes)[offsetBlock][i], dataBlock, offsetBlock)
+				for i := 0; i < *numReplicas; i++{
+					sendBlock((*dataNodes)[offsetBlock][i], dataBlock, offsetBlock)
 				}
 			} else {
 				startData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,blockStart)
 				endData = Normalize(blockStart,blockStart+dataBlockSize,0,dataBlockSize,endWrite)
 				copy(dataBlock[startData:endData] , (*buffer)[:])
 				*buffer = (*buffer)[:0]
-				for i := 0; i < numReplicas; i++{
-					go sendBlock((*dataNodes)[offsetBlock][i], dataBlock, offsetBlock)
+				for i := 0; i < *numReplicas; i++{
+					sendBlock((*dataNodes)[offsetBlock][i], dataBlock, offsetBlock)
 				}
 			}
 		}
@@ -193,17 +193,17 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]*Peer, startWrite ui
 	} else {
 		chunks := Split(*buffer,int(dataBlockSize))
 		peerNum := 0
-		if numReplicas > len(connList) {
-			numReplicas = len(connList)
+		if *numReplicas > len(connList) {
+			*numReplicas = len(connList)
 		}
 		if len(connList) > 0 {
 			for _, c := range chunks {
 				sortPeers("data", connList)
 
-				for i := 0; i < numReplicas; i++ {
+				for i := 0; i < *numReplicas; i++ {
 
 					(*dataNodes)[blockIdentifier] = append((*dataNodes)[blockIdentifier], connList[peerNum])
-					go sendBlock(connList[peerNum], c, blockIdentifier)
+					sendBlock(connList[peerNum], c, blockIdentifier)
 					peerNum += 1
 					peerNum = peerNum % len(connList)
 				}

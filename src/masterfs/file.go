@@ -6,6 +6,7 @@ import (
 	"golang.org/x/net/context"
 	"encoding/json"
 	"os"
+	"sort"
 )
 
 type File struct{
@@ -47,20 +48,53 @@ if len(connList) > 0 {
 		}
 		range_block := end_block - start_block
 		buff := make([]byte, 0, dataBlockSize*range_block)
-		for i := start_block; i <= end_block; i++ {
-			sortPeers("data",f.DataNodes[i])	
-			for len(f.DataNodes[i]) != 0 {
-				b, err := recvBlock((f.DataNodes[i])[0],i)				// always receiving first replica!
+		
+		// for i := start_block; i <= end_block; i++ {
+		// 	sortPeers("data",f.DataNodes[i])
+		// 		log.Println(f.DataNodes[i],f.DataNodes[i],i)		
+
+		// 	for len(f.DataNodes[i]) != 0 {
+		// 		log.Println(f.DataNodes[i],f.DataNodes[i][0])		
+		// 		b, err := recvBlock((f.DataNodes[i])[0],i)
+		// 		log.Println("hi")				// always receiving first replica!
+		// 		if err != nil {
+		// 			log.Println("Peer disconnected!")
+		// 			f.DataNodes[i] = append(f.DataNodes[i][:0], f.DataNodes[i][0+1:]...)	// delete the disconnected
+		// 		} else {
+		// 			buff = append(buff, b...)
+		// 			break
+		// 		}
+		// 	}
+
+		// }
+		// To store the keys in slice in sorted order
+	    var keys []int
+	    for k := range f.DataNodes {
+	        keys = append(keys, int(k))
+	    }
+	    sort.Ints(keys)
+
+	    // To perform the opertion you want
+	    i:= start_block
+	    for _, k := range keys {
+	    	if (i>end_block) {
+	    		break
+	    	}
+
+	    	sortPeers("data",f.DataNodes[uint64(k)])
+			for len(f.DataNodes[uint64(k)]) != 0 {
+				b, err := recvBlock((f.DataNodes[uint64(k)])[0],uint64(k))
 				if err != nil {
 					log.Println("Peer disconnected!")
-					f.DataNodes[i] = append(f.DataNodes[i][:0], f.DataNodes[i][0+1:]...)	// delete the disconnected
+					f.DataNodes[uint64(k)] = append(f.DataNodes[uint64(k)][:0], f.DataNodes[uint64(k)][0+1:]...)	// delete the disconnected
 				} else {
 					buff = append(buff, b...)
 					break
-				}
-			}
-
-		}	
+				}     
+		    }
+		    i += 1
+		}
+		
 		resp.Data = buff[uint64(req.Offset) - start_block*dataBlockSize : limit - start_block*dataBlockSize]
 	} else {
 		log.Println("No peers connected! Cannot write to file", f.Name)
@@ -83,7 +117,8 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 		numReplicas := f.Replicas
 		for _, value:= range range_block {
 			if len(buff) > 0{
-				BlockCheck(value,&f.DataNodes,write_offset,limit,dataBlockSize*value,&buff,numReplicas) // check if block exists overwrite else create
+				BlockCheck(value,&f.DataNodes,write_offset,limit,dataBlockSize*value,&buff,&numReplicas) // check if block exists overwrite else create
+				f.Replicas = numReplicas
 			}
 		}
 		f.Attributes.Size = limit
@@ -110,16 +145,24 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 		f.Attributes.Size = req.Size
 		f.Attributes.Blocks = Blocks(f.Attributes.Size)
 		// remove rest of the blocks
-		range_block := RangeOfBlocks(f.Attributes.Blocks,numBlocksB4-1)
+		// range_block := RangeOfBlocks(f.Attributes.Blocks,numBlocksB4-1)
 		if f.Attributes.Blocks < numBlocksB4  {
-			for i := len(range_block)-1; i >= 0; i-- {
-
-				for j := 0; j < f.Replicas; j++{
-					go deleteBlock(f.DataNodes[range_block[i]][j], range_block[i])
+			// for i := len(range_block)-1; i >= 0; i-- {
+			// 	for j := 0; j < f.Replicas; j++{
+			// 		go deleteBlock(f.DataNodes[range_block[i]][j], range_block[i])
+			// 	}
+			// 	// f.DataNodes = append(f.DataNodes[:range_block[i]], f.DataNodes[range_block[i]+1:]...)
+   //      			// delete(f.DataNodes, range_block[i])				
+			// }
+			for key, value := range f.DataNodes {
+				for _, peer := range value {
+					deleteBlock(peer, key)
 				}
-				// f.DataNodes = append(f.DataNodes[:range_block[i]], f.DataNodes[range_block[i]+1:]...)
-				delete(f.DataNodes, range_block[i])
 			}
+			f.DataNodes = make(map[uint64][]*Peer)
+			// for key := range f.DataNodes {
+			//     delete(f.DataNodes, key)
+			// }
 		}
 	}
 	// Set the mode on the node
