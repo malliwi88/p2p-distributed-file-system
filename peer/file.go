@@ -6,7 +6,6 @@ import (
 	"golang.org/x/net/context"
 	"encoding/json"
 	"os"
-	// "sort"
 )
 
 type File struct{
@@ -23,7 +22,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Blocks = f.Attributes.Blocks
 	a.BlockSize = f.Attributes.BlockSize
 	log.Println("Requested Attr for File", f.Name, "has data size", f.Attributes.Size, "has blocks", f.Attributes.Blocks)
-	go f.SaveMetaFile()
+	// go f.SaveMetaFile()
 	return nil
 }
 
@@ -113,21 +112,12 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 		f.Attributes.Blocks = Blocks(f.Attributes.Size)
 		// remove rest of the blocks
 		if f.Attributes.Blocks < numBlocksB4  {
-			// log.Println("I AM HERER")
 			for i := numBlocksB4-1; i >= f.Attributes.Blocks; i-- {
-				// log.Println("Blocks before:",numBlocksB4)
-				// log.Println("Blocks after:",f.Attributes.Blocks)
-				// log.Println("I:",i)
-				// log.Println("DATANODES:",len(f.DataNodes))
 				for j := 0; j < f.Replicas; j++{
 					deleteBlock(f.DataNodes[i][0].PeerInfo, f.DataNodes[i][0].Name)
 				}
 				f.DataNodes[i] = f.DataNodes[i][:1]
 				f.DataNodes[i][0].Used = false
-				// delete(f.DataNodes, i)
-				// log.Println("I2:",i)
-				// log.Println("Blocks before2:",numBlocksB4)
-				// log.Println("Blocks after2:",f.Attributes.Blocks)
 				if i == 0 {
 					break
 				}
@@ -168,6 +158,5 @@ func (f *File) SaveMetaFile() {
 	}
 	handle.Sync()
 	log.Println("Saving backup file")
-
 
 }

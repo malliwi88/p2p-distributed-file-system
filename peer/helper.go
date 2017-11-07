@@ -1,21 +1,23 @@
-package main
+package main 
 
 import (
+	"encoding/json"
+	"time"
+	"sort"
 	"log"
 	"bazil.org/fuse"
-	"bazil.org/fuse/fs"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
-	"io/ioutil"
-	"encoding/json"
-)
+	"net"
+)	
 
-// variables
+
+
+// global variables
+var connList []*Peer
 var dataBlockSize uint64 = 512
 var blockIdentifier uint64 = 0
 var inode uint64 = 0
+
+
 
 // structures
 type Node struct {
@@ -36,6 +38,22 @@ type OneBlockInfo struct {
 	Used bool
 }
 
+type Peer struct {
+	Ip string
+	Port string
+	Conn net.Conn
+	DataSent uint64
+	ResponseTime time.Duration
+	NetType string
+}
+
+type message struct {
+	Type string `json:"type"`
+	Data []byte `json:"data"`
+	Name uint64 `json:"name"`
+}
+
+
 
 // functions
 func (n *Node) InitNode() {
@@ -55,6 +73,14 @@ func (n *Node) InitNode() {
 	n.Attributes.Rdev = 0
 	n.Attributes.BlockSize = uint32(dataBlockSize) // block size
 
+}
+
+func (p *Peer) String() string {
+	return p.Ip + ":" + p.Port
+}
+
+func (p *Peer) Network() string {
+	return p.NetType
 }
 
 func checkError(e error){
@@ -116,14 +142,10 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]*OneBlockInfo, buffe
 	}
 	if offsetBlock < uint64(len(*dataNodes)) {
 		if (*dataNodes)[offsetBlock][0].Used {
-			// log.Println("Exists and Used")
-			// log.Println(offsetBlock)
 			for j := 0; j < len((*dataNodes)[offsetBlock]); j++ {
 				sendBlock((*dataNodes)[offsetBlock][j].PeerInfo, buffer, (*dataNodes)[offsetBlock][j].Name)
 			}
 		} else {
-			// log.Println("Exists but not Used")
-			// log.Println(offsetBlock)
 			sortPeers1("data", connList)
 			name := (*dataNodes)[offsetBlock][0].Name
 			(*dataNodes)[offsetBlock] = make([]*OneBlockInfo, 0, *numReplicas)
@@ -134,8 +156,6 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]*OneBlockInfo, buffe
 			}
 		}
 	} else {
-		// log.Println("Doesn't exist")
-		// 	log.Println(offsetBlock)
 		sortPeers1("data", connList)
 		for j := 0; j < *numReplicas; j++ {
 
@@ -144,10 +164,6 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]*OneBlockInfo, buffe
 				(*dataNodes)[offsetBlock] = make([]*OneBlockInfo, 0, *numReplicas)
 			}
 			(*dataNodes)[offsetBlock] = append((*dataNodes)[offsetBlock], singleBlock)
-			
-		// log.Println("Call for:", offsetBlock)
-
-			// GO CALL CREATES PROBLEM HERE
 			sendBlock(connList[j], buffer, (*singleBlock).Name)
 		}
 		blockIdentifier++
@@ -155,71 +171,93 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]*OneBlockInfo, buffe
 }
 
 
-func InterruptHandler(mountpoint string, FileSystem *FS) {
+func sendBlock(peer *Peer, data []byte, block uint64) {
+	
+	encrypted_data := Encrypt(data,[]byte("123"),int64(len(data)))
+	conn := peer.Conn
+	m := message{"send", encrypted_data, block}	
+	
+	json.NewEncoder(conn).Encode(&m)
+	
+	start_time := time.Now()
+	
+	var ack message
+	decoder := json.NewDecoder(conn)
+	
+	peer.ResponseTime = time.Since(start_time)
+	peer.DataSent += uint64(len(data)) 
+ 	
+ 	err := decoder.Decode(&ack)
+ 	checkError(err)
 
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	<-sigs
-	log.Println("\nShutting down fuse server!\n")
-	err := fuse.Unmount(mountpoint)
-	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
+
+}
+
+func recvBlock(peer *Peer, block uint64) ([]byte, error) {
+
+	conn := peer.Conn
+	m := message{"recv", []byte(""), block}
+	err := json.NewEncoder(conn).Encode(&m)
+	start_time := time.Now()	
+	var ack message
+	decoder := json.NewDecoder(conn)
+ 	peer.ResponseTime = time.Since(start_time)
+ 	err = decoder.Decode(&ack)
+ 	decrypted_data := Decrypt(ack.Data,[]byte("123"))
+ 	
+	return decrypted_data, err
+}
+
+func deleteBlock(peer *Peer, block uint64) {
+	
+	conn := peer.Conn
+	m := message{"delete", []byte(""), block}
+	json.NewEncoder(conn).Encode(&m)
+	
+	start_time := time.Now()
+
+	var ack message
+	decoder := json.NewDecoder(conn)
+
+ 	peer.ResponseTime = time.Since(start_time)
+	
+ 	err := decoder.Decode(&ack)
+ 	checkError(err)
+
+}
+
+func sortPeers1(loadType string, peerArray []*Peer) {
+
+	if loadType == "data" {
+		
+		sort.Slice(peerArray[:], func(i, j int) bool {
+    		return peerArray[i].DataSent < peerArray[j].DataSent
+		})
+
+	} else if loadType == "time" {
+
+		sort.Slice(peerArray[:], func(i, j int) bool {
+    		return peerArray[i].ResponseTime < peerArray[j].ResponseTime
+		})
+
 	}
 }
 
+func sortPeers(loadType string, peerArray []*OneBlockInfo) {
 
+	if loadType == "data" {
+		
+		sort.Slice(peerArray[:], func(i, j int) bool {
+    		return peerArray[i].PeerInfo.DataSent < peerArray[j].PeerInfo.DataSent
+		})
 
-func FUSE(mountpoint string) {
+	} else if loadType == "time" {
 
-	// load meta data
-	backupDir := "/mnt/backup/"
-	files, err := ioutil.ReadDir(backupDir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	meta := Meta{}
-	fileArray := []*File{}
-	for _, file := range files {
-		content, err := ioutil.ReadFile(backupDir + file.Name())
-		if err != nil {
-			log.Fatal(err)
-		}
-		meta = Meta{}
-    	json.Unmarshal(content, &meta)
-    	filemeta := File{}
-    	filemeta.Node.Name = meta.Name
-    	filemeta.DataNodes = meta.DataNodes
-    	filemeta.Node.Attributes = meta.Attributes
-    	filemeta.Replicas = meta.Replicas
-		fileArray = append(fileArray,&filemeta)
-	}
-	////////////////////////////////////////////////////
-	
-	fuse.Unmount(mountpoint)
-	c, err := fuse.Mount(mountpoint)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer c.Close()
-	FileSystem := new(FS)
-	FileSystem.root = new(Dir)
-	FileSystem.root.InitNode()
-	FileSystem.root.files = &fileArray
-	go InterruptHandler(mountpoint, FileSystem)
-	
-	err = fs.Serve(c, FileSystem)
-	if err != nil {
-		log.Fatal(err)
+		sort.Slice(peerArray[:], func(i, j int) bool {
+    		return peerArray[i].PeerInfo.ResponseTime < peerArray[j].PeerInfo.ResponseTime
+		})
 
 	}
-	// check if the mount process has an error to report
-	<-c.Ready
-	if err := c.MountError; err != nil {
-		log.Fatal(err)
-	}
-
-
 }
 
 
