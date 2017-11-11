@@ -9,10 +9,8 @@ Copy the repository to your $GOPATH
 Both the executables will be created in the 'bin' folder of your repository.
 
 ## Description:
-The master server runs on the default address: localhost:8000 and uses FUSE as its filesystem.
-To run the master you have to pass the mountpoint to the command line. The slaves automatically
-conncect to the master when executed. All the data is stored remotely in the slaves. FUSE 
-will work as if all the files were stored locally.
+All peers store their files on each other. They all run their separate FUSE filsystems. To get IPs of peers
+in the system they contact a central server running on port 8080.
 
 #### Functions implemented:
 - Division of file into blocks
@@ -20,10 +18,11 @@ will work as if all the files were stored locally.
 - Distributed readAll function
 - Write by offset
 - Read by offset
-
-#### Functions to implement (For now):
-- Load balancing
+- Seperate working peers
+- Central Server to share IPs
 - Fault tolerance
-- Multiple copies of the same block on different IPs
+- Load balancing
 
+#### Issues to solve (For now):
+- nano and vim not working
 

@@ -6,12 +6,11 @@ import (
 	"golang.org/x/net/context"
 	"encoding/json"
 	"os"
-	"sort"
 )
 
 type File struct{
 	Node
-	DataNodes map[uint64][]*Peer
+	DataNodes map[uint64][]*OneBlockInfo
 	Replicas int
 }
 
@@ -48,56 +47,22 @@ if len(connList) > 0 {
 		}
 		range_block := end_block - start_block
 		buff := make([]byte, 0, dataBlockSize*range_block)
-		
-		// for i := start_block; i <= end_block; i++ {
-		// 	sortPeers("data",f.DataNodes[i])
-		// 		log.Println(f.DataNodes[i],f.DataNodes[i],i)		
-
-		// 	for len(f.DataNodes[i]) != 0 {
-		// 		log.Println(f.DataNodes[i],f.DataNodes[i][0])		
-		// 		b, err := recvBlock((f.DataNodes[i])[0],i)
-		// 		log.Println("hi")				// always receiving first replica!
-		// 		if err != nil {
-		// 			log.Println("Peer disconnected!")
-		// 			f.DataNodes[i] = append(f.DataNodes[i][:0], f.DataNodes[i][0+1:]...)	// delete the disconnected
-		// 		} else {
-		// 			buff = append(buff, b...)
-		// 			break
-		// 		}
-		// 	}
-
-		// }
-		// To store the keys in slice in sorted order
-	    var keys []int
-	    for k := range f.DataNodes {
-	        keys = append(keys, int(k))
-	    }
-	    sort.Ints(keys)
-
-	    // To perform the opertion you want
-	    i:= start_block
-	    for _, k := range keys {
-	    	if (i>end_block) {
-	    		break
-	    	}
-
-	    	sortPeers("data",f.DataNodes[uint64(k)])
-			for len(f.DataNodes[uint64(k)]) != 0 {
-				b, err := recvBlock((f.DataNodes[uint64(k)])[0],uint64(k))
+		for i := start_block; i <= end_block; i++ {
+			sortPeers("data",f.DataNodes[i])	
+			for len(f.DataNodes[i]) != 0 {
+				b, err := recvBlock((f.DataNodes[i])[0].PeerInfo,(f.DataNodes[i])[0].Name)				// always receiving first replica!
 				if err != nil {
 					log.Println("Peer disconnected!")
-					f.DataNodes[uint64(k)] = append(f.DataNodes[uint64(k)][:0], f.DataNodes[uint64(k)][0+1:]...)	// delete the disconnected
+					f.DataNodes[i] = f.DataNodes[i][1:]	// delete the disconnected
 				} else {
 					buff = append(buff, b...)
 					break
-				}     
-		    }
-		    i += 1
-		}
-		
+				}
+			}
+		}	
 		resp.Data = buff[uint64(req.Offset) - start_block*dataBlockSize : limit - start_block*dataBlockSize]
 	} else {
-		log.Println("No peers connected! Cannot write to file", f.Name)
+		log.Println("No peers connected! Cannot read from file", f.Name)
 	}
 	return nil
 }
@@ -107,20 +72,21 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	
 	if len(connList) > 0 {
 		write_length := uint64(len(req.Data)) 						// data write length
-		write_offset := uint64(req.Offset)     						// offset of the write
+		write_offset := uint64(req.Offset)							// offset of the write
 		limit := write_offset + write_length             			// The final length of the data
 		start_block := Offset2Block(write_offset)
 		end_block := Offset2Block(limit)
-		range_block := RangeOfBlocks(start_block,end_block)  // range of blocks to change or create
 		buff := make([]byte, len(req.Data))
 		copy(buff[:], req.Data[:])
 		numReplicas := f.Replicas
-		for _, value:= range range_block {
-			if len(buff) > 0{
-				BlockCheck(value,&f.DataNodes,write_offset,limit,dataBlockSize*value,&buff,&numReplicas) // check if block exists overwrite else create
-				f.Replicas = numReplicas
-			}
+		for i := start_block; i < end_block; i++ {
+			BlockCheck(i, &f.DataNodes, buff[i*dataBlockSize:(i+1)*dataBlockSize], &numReplicas)
 		}
+		if start_block == end_block {
+			BlockCheck(start_block, &f.DataNodes, buff, &numReplicas)
+		}
+
+		f.Replicas = numReplicas
 		f.Attributes.Size = limit
 		f.Attributes.Blocks = Blocks(f.Attributes.Size)
 		resp.Size = int(write_length)	
@@ -145,24 +111,17 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 		f.Attributes.Size = req.Size
 		f.Attributes.Blocks = Blocks(f.Attributes.Size)
 		// remove rest of the blocks
-		// range_block := RangeOfBlocks(f.Attributes.Blocks,numBlocksB4-1)
 		if f.Attributes.Blocks < numBlocksB4  {
-			// for i := len(range_block)-1; i >= 0; i-- {
-			// 	for j := 0; j < f.Replicas; j++{
-			// 		go deleteBlock(f.DataNodes[range_block[i]][j], range_block[i])
-			// 	}
-			// 	// f.DataNodes = append(f.DataNodes[:range_block[i]], f.DataNodes[range_block[i]+1:]...)
-   //      			// delete(f.DataNodes, range_block[i])				
-			// }
-			for key, value := range f.DataNodes {
-				for _, peer := range value {
-					deleteBlock(peer, key)
+			for i := numBlocksB4-1; i >= f.Attributes.Blocks; i-- {
+				for j := 0; j < f.Replicas; j++{
+					deleteBlock(f.DataNodes[i][0].PeerInfo, f.DataNodes[i][0].Name)
+				}
+				f.DataNodes[i] = f.DataNodes[i][:1]
+				f.DataNodes[i][0].Used = false
+				if i == f.Attributes.Blocks {
+					break
 				}
 			}
-			f.DataNodes = make(map[uint64][]*Peer)
-			// for key := range f.DataNodes {
-			//     delete(f.DataNodes, key)
-			// }
 		}
 	}
 	// Set the mode on the node
@@ -175,6 +134,7 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 
 }
 
+
 func (f *File) SaveMetaFile() {
 
 	meta := &Meta{Name: f.Name, Attributes: f.Attributes, DataNodes: f.DataNodes, Replicas: f.Replicas}
@@ -183,7 +143,7 @@ func (f *File) SaveMetaFile() {
         log.Println("Error converting backup to json ",err)
         return
     }
-	handle, err := os.Create("/mnt/backup/"+f.Name+".meta")
+	handle, err := os.Create("/mnt/"+myID+"_backup/"+f.Name+".meta")
 	defer handle.Close()
 	if err != nil {
 	    log.Println("Error creating backup file ",err)
@@ -198,5 +158,5 @@ func (f *File) SaveMetaFile() {
 	handle.Sync()
 	log.Println("Saving backup file")
 
-
 }
+
