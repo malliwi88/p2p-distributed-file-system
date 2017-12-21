@@ -186,7 +186,6 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]*OneBlockInfo, buffe
 			sendBlock(connList[j], buffer, (*singleBlock).Name)
 		}
 		blockIdentifier++
-		log.Println(blockIdentifier)
 	}
 }
 

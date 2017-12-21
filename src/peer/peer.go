@@ -225,6 +225,10 @@ func main() {
 	mountpoint := flag.String("mount", "/mnt/fmount", "folder to mount")
     flag.Parse()
 
+    if _, err := os.Stat(*mountpoint); os.IsNotExist(err) {
+		os.Mkdir(*mountpoint, 0777)
+	}
+
 	// interface_addr, _ := net.InterfaceAddrs()
 	// local_IP := interface_addr[0].String()
 	local_IP := "127.0.0.1"
