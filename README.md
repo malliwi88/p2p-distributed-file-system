@@ -18,7 +18,7 @@ The central server runs on port 8080. The port number and the mount point of pee
 ## Description:
 The peer module runs its own FUSE filesystem. It contacts the central server to get the address of other peers in the system. When writing anything to a file, the data gets divided into block 512 bytes each. These blocks are sent to other peers by initiating a TCP connection with them. For load balancing, the peer can either send the next block to the peer with least amount of data stored previously or it can choose the peer with the least response time. For fault tolerance, the peer simply keeps multiple copies of its blocks on separate peers. If one peer fails to respond it asks the other peer holding that same data.
 
-The central server follows a flood fill algorithm. When a new node arrives, it sends it address to all the peers in the node. Similarly, when a particular node changes its address it informs all the other nodes.
+The central server follows a flood-fill algorithm. When a new node arrives, it sends it address to all the peers in the node. Similarly, when a particular node changes its address it informs all the other nodes.
 
 #### Functions implemented:
 - Division of file into blocks
