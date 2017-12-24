@@ -7,7 +7,7 @@ import (
 	"log"
 	"strings"
 	"flag"
-	"path"
+	// "path"
 	"io/ioutil"
 	"path/filepath"
 	"encoding/json"
@@ -75,7 +75,7 @@ func handler(conn net.Conn, me Peer) {
 	go manageMesseges(conn,me)
 }
 
-func connectToServer(me Peer,dst Peer) {
+func connectToServer(me Peer, dst Peer) {
 	
 	// fix IP and dial
 	// myAddr, err := net.ResolveIPAddr("IP", "127.0.0.1")
@@ -101,17 +101,13 @@ func connectToServer(me Peer,dst Peer) {
     fmt.Scanln(&id)
 	myID = id
 
-	fmt.Print("password: ")
-	var password string
-	fmt.Scanln(&password)
-
 	// load connList
-	backupDir := "/mnt/"+myID+"_backup/"
-	content, err := ioutil.ReadFile(backupDir + "connList")
-    json.Unmarshal(content, &connList)
+	// backupDir := "/mnt/"+myID+"_backup/"
+	// content, err := ioutil.ReadFile(backupDir + "connList")
+    // json.Unmarshal(content, &connList)
+    // log.Println(connList)
 
-
-	msg := message{"login",[]byte(""),0,myID,password,me.IP+":"+me.Port,""}
+	msg := message{"login", []byte(""), 0, myID, me.IP+":"+me.Port, ""}
 	json.NewEncoder(conn).Encode(&msg)
 	// go updatePeers(conn)
 }
@@ -139,90 +135,87 @@ func connectToServer(me Peer,dst Peer) {
 
 func manageMesseges(conn net.Conn, myInfo Peer) {
     	
-    	var msg message
-		decoder := json.NewDecoder(conn)
-    	err := decoder.Decode(&msg)    	
-    	checkFatal(err)
+	var msg message
+	decoder := json.NewDecoder(conn)
+	err := decoder.Decode(&msg)    	
+	checkFatal(err)
+	
+	if err == io.EOF {
+		conn.Close()
+		return
+	}
+	
+	if msg.Type == "send" {
+		filename := strconv.Itoa(int(msg.Name))
+
+		myDir := "/mnt/" + (msg.PeerID)
+		// create folder with peer's address
+	    if _, err := os.Stat(myDir); os.IsNotExist(err) {
+			os.Mkdir(myDir, 0777)
+		}
+
+		f, err := os.Create(filepath.Join(getPeerDir(msg.PeerID), filename))
+		checkFatal(err)
+		f.Chmod(0777)
+    	b, err := f.WriteString(string(msg.Data))
+    	log.Printf("Wrote %d bytes to file: %s \n", b, filename)
+    	f.Sync()
+    	f.Close()
     	
-    	if err == io.EOF {
-    		conn.Close()
-    		return
-    		
-    	}
+    	send_ack := message{"send_ack", []byte(""), msg.Name,"","",""}
+		json.NewEncoder(conn).Encode(&send_ack)
+
+	} else if msg.Type == "recv" {
+
+		filename := strconv.Itoa(int(msg.Name))
+		dat, err := ioutil.ReadFile(filepath.Join(getPeerDir(msg.PeerID), filename))
+		if err != nil {
+			log.Println(err)
+		}
+    	log.Printf("Sending file: %s \n", filename)
+	    
+	    recv_ack := message{"recv_ack", dat, msg.Name,"","",""}
+		json.NewEncoder(conn).Encode(&recv_ack)
+
+
+	} else if msg.Type == "delete" {
 		
-		if msg.Type == "send" {
-			filename := strconv.Itoa(int(msg.Name))
-			f, err := os.Create(filepath.Join(getPeerDir(msg.PeerID), filename))
-			checkFatal(err)
-			f.Chmod(0777)
-	    	b, err := f.WriteString(string(msg.Data))
-	    	log.Printf("Wrote %d bytes to file: %s \n", b, filename)
-	    	f.Sync()
-	    	f.Close()
-	    	
-	    	send_ack := message{"send_ack", []byte(""), msg.Name,"","","",""}
-			json.NewEncoder(conn).Encode(&send_ack)
+		filename := strconv.Itoa(int(msg.Name))
+    	log.Printf("Removing file: %s \n", filename)
+		err := os.Remove(filepath.Join(getPeerDir(msg.PeerID), filename))
+		checkError(err)
 
-		} else if msg.Type == "recv" {
+		del_ack := message{"del_ack", []byte(""), msg.Name,"","",""}
+		json.NewEncoder(conn).Encode(&del_ack)
 
-			filename := strconv.Itoa(int(msg.Name))
-			dat, err := ioutil.ReadFile(filepath.Join(getPeerDir(msg.PeerID), filename))
-			if err != nil {
-				log.Println(err)
+
+	} else if msg.Type == "add" {
+    	
+    	fmt.Println(msg)
+    	s_addr := strings.Split(msg.PeerAddr,":")
+    	otherPeer := Peer{ID: msg.PeerID, IP: s_addr[0], Port: s_addr[1], NetType: "tcp"}
+
+		myDir := "/mnt/" + (otherPeer.ID)
+		otherPeer.PathToFiles = myDir
+		
+		connList = append(connList, &otherPeer)	
+    	ack := message{"ack", []byte(""), 0, "", "", ""}
+		json.NewEncoder(conn).Encode(&ack)
+
+  	} else if msg.Type == "update" {
+    	
+    	fmt.Println(msg)
+		for _, p := range connList {
+			if p.ID == msg.PeerID {
+				p_addr := strings.Split(msg.PeerAddr, ":")
+				p.IP = p_addr[0]
+				p.Port = p_addr[1]
 			}
-	    	log.Printf("Sending file: %s \n", filename)
-		    
-		    recv_ack := message{"recv_ack", dat, msg.Name,"","","",""}
-			json.NewEncoder(conn).Encode(&recv_ack)
-
-
-		} else if msg.Type == "delete" {
-			
-			filename := strconv.Itoa(int(msg.Name))
-	    	log.Printf("Removing file: %s \n", filename)
-			err := os.Remove(filepath.Join(getPeerDir(msg.PeerID), filename))
-			checkError(err)
-
-			del_ack := message{"del_ack", []byte(""), msg.Name,"","","",""}
-			json.NewEncoder(conn).Encode(&del_ack)
-
-
-		} else if msg.Type == "add" {
-        	
-        	fmt.Println(msg)
-        	s_addr := strings.Split(msg.PeerAddr,":")
-        	otherPeer := Peer{ID:msg.PeerID,IP: s_addr[0], Port: s_addr[1], NetType: "tcp"}
-			// get current working directory
-			ex, err := os.Executable()		
-		    if err != nil {
-		        panic(err)
-		    }
-		    exPath := path.Dir(ex)
-		    _ = exPath
-			myDir := "/mnt" + "/" + (otherPeer.ID)
-			// create folder with peer's address
-		    if _, err := os.Stat(myDir); os.IsNotExist(err) {
-				os.Mkdir(myDir, 0777)
-			}
-			otherPeer.PathToFiles = myDir
-			connList = append(connList, &otherPeer)	
-        	ack := message{"ack", []byte(""),0, "","","",""}
-			json.NewEncoder(conn).Encode(&ack)
-
-      	} else if msg.Type == "update" {
-        	
-        	fmt.Println(msg)
-			for _, p := range connList {
-				if p.ID == msg.PeerID {
-					p_addr := strings.Split(msg.PeerAddr,":")
-					p.IP = p_addr[0]
-					p.Port = p_addr[1]
-				}
-			}
-        	ack := message{"ack", []byte(""),0, "","","",""}
-			json.NewEncoder(conn).Encode(&ack)
-      	}
-      	conn.Close()
+		}
+    	ack := message{"ack", []byte(""), 0, "", "", ""}
+		json.NewEncoder(conn).Encode(&ack)
+  	}
+  	conn.Close()
 
 }
 
@@ -231,6 +224,10 @@ func main() {
 	myport := flag.Int("port", 9000, "Port to run this node on")
 	mountpoint := flag.String("mount", "/mnt/fmount", "folder to mount")
     flag.Parse()
+
+    if _, err := os.Stat(*mountpoint); os.IsNotExist(err) {
+		os.Mkdir(*mountpoint, 0777)
+	}
 
 	// interface_addr, _ := net.InterfaceAddrs()
 	// local_IP := interface_addr[0].String()
@@ -248,9 +245,9 @@ func main() {
 	
 
 
-
-	connectToServer(me,server)
 	go listen(me)
+
+	connectToServer(me, server)
 
 	// mount the FUSE file system
 	// mountpoint := selectMountpoint()

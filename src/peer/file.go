@@ -22,7 +22,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Blocks = f.Attributes.Blocks
 	a.BlockSize = f.Attributes.BlockSize
 	log.Println("Requested Attr for File", f.Name, "has data size", f.Attributes.Size, "has blocks", f.Attributes.Blocks)
-	go f.SaveMetaFile()
+	// go f.SaveMetaFile()
 	return nil
 }
 
@@ -48,9 +48,9 @@ if len(connList) > 0 {
 		range_block := end_block - start_block
 		buff := make([]byte, 0, dataBlockSize*range_block)
 		for i := start_block; i <= end_block; i++ {
-			sortPeers("data",f.DataNodes[i])	
+			sortPeers("data", f.DataNodes[i])	
 			for len(f.DataNodes[i]) != 0 {
-				b, err := recvBlock((f.DataNodes[i])[0].PeerInfo,(f.DataNodes[i])[0].Name)				// always receiving first replica!
+				b, err := recvBlock((f.DataNodes[i])[0].PeerInfo, (f.DataNodes[i])[0].Name)				// always receiving first replica!
 				if err != nil {
 					log.Println("Peer disconnected!")
 					f.DataNodes[i] = f.DataNodes[i][1:]	// delete the disconnected
@@ -76,14 +76,16 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 		limit := write_offset + write_length             			// The final length of the data
 		start_block := Offset2Block(write_offset)
 		end_block := Offset2Block(limit)
+		start_block2 := start_block
 		buff := make([]byte, len(req.Data))
 		copy(buff[:], req.Data[:])
 		numReplicas := f.Replicas
-		for i := start_block; i < end_block; i++ {
-			BlockCheck(i, &f.DataNodes, buff[i*dataBlockSize:(i+1)*dataBlockSize], &numReplicas)
+		for i := uint64(0); i < (end_block-start_block); i++ {
+			BlockCheck(i+Blocks(f.Attributes.Size), &f.DataNodes, buff[i*dataBlockSize:(i+1)*dataBlockSize], &numReplicas)
+			start_block2++
 		}
-		if start_block == end_block {
-			BlockCheck(start_block, &f.DataNodes, buff, &numReplicas)
+		if start_block2 == end_block && write_length % dataBlockSize != 0 {
+			BlockCheck(start_block2, &f.DataNodes, buff[start_block2*dataBlockSize-write_offset:len(buff)], &numReplicas)
 		}
 
 		f.Replicas = numReplicas
@@ -126,7 +128,7 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 	}
 	// Set the mode on the node
 	if req.Valid.Mode() {
-		log.Printf("Setting node %s Mode to %v", f.Name, req.Mode)
+		log.Printf("Setting node %s Mode to %v from %v", f.Name, req.Mode, f.Attributes.Mode)
 		f.Attributes.Mode = req.Mode
 	}
 	resp.Attr = f.Attributes
@@ -134,6 +136,12 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 
 }
 
+
+func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+
+	log.Println("fsync on file")
+	return nil
+}
 
 func (f *File) SaveMetaFile() {
 
@@ -157,6 +165,5 @@ func (f *File) SaveMetaFile() {
 	}
 	handle.Sync()
 	log.Println("Saving backup file")
-
 }
 

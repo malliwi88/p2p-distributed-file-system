@@ -17,8 +17,11 @@ func InterruptHandler(mountpoint string, FileSystem *FS) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	<-sigs
-	log.Println("\nShutting down fuse server!\n")
-	SaveConnList()
+	log.Println("\nShutting down the peer!\n")
+	// SaveConnList()
+	for _, file := range *(FileSystem.root.files) {
+		(*file).SaveMetaFile()
+	}
 	err := fuse.Unmount(mountpoint)
 	if err != nil {
 		log.Fatal(err)
@@ -54,7 +57,7 @@ func FUSE(mountpoint string) {
     	filemeta.DataNodes = meta.DataNodes
     	filemeta.Node.Attributes = meta.Attributes
     	filemeta.Replicas = meta.Replicas
-		fileArray = append(fileArray,&filemeta)
+		fileArray = append(fileArray, &filemeta)
 		
 
 

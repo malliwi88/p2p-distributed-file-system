@@ -59,7 +59,6 @@ type message struct {
 	Data []byte `json:"data"`
 	Name uint64 `json:"name"`
 	PeerID string `json:"id"`
-	Password string `json:"password"`
   	ListenAddr string `json:"listenaddr"`
   	PeerAddr string `json:"peeraddr"`
 }
@@ -200,8 +199,8 @@ func sendBlock(peer *Peer, data []byte, block uint64) {
     }
 	// peer.Conn = getConn(peer).Conn
 	// conn := peer.Conn	
-	encrypted_data := Encrypt(data,[]byte("123"),int64(len(data)))
-	m := message{"send",encrypted_data,block,myID,"","",""}	
+	encrypted_data := Encrypt(data, []byte("123"), int64(len(data)))
+	m := message{"send", encrypted_data, block, myID, "", ""}	
 	json.NewEncoder(conn).Encode(&m)
 	start_time := time.Now()
 	var ack message
@@ -212,7 +211,6 @@ func sendBlock(peer *Peer, data []byte, block uint64) {
  	checkError(err)
 
  	conn.Close()
-
 
 }
 
@@ -225,14 +223,14 @@ func recvBlock(peer *Peer, block uint64) ([]byte, error) {
     }
 	// peer.Conn = getConn(peer).Conn
 	// conn := peer.Conn
-	m := message{"recv", []byte(""), block,myID,"","",""}
+	m := message{"recv", []byte(""), block, myID, "", ""}
 	err = json.NewEncoder(conn).Encode(&m)
 	start_time := time.Now()	
 	var ack message
 	decoder := json.NewDecoder(conn)
  	peer.ResponseTime = time.Since(start_time)
  	err = decoder.Decode(&ack)
- 	decrypted_data := Decrypt(ack.Data,[]byte("123"))
+ 	decrypted_data := Decrypt(ack.Data, []byte("123"))
 
  	conn.Close()
 	return decrypted_data, err
@@ -248,7 +246,7 @@ func deleteBlock(peer *Peer, block uint64) {
 
 	// peer.C/onn = getConn(peer).Conn
 	// conn := peer.Conn
-	m := message{"delete", []byte(""), block,myID,"","",""}
+	m := message{"delete", []byte(""), block, myID, "", ""}
 	json.NewEncoder(conn).Encode(&m)
 	start_time := time.Now()
 	var ack message
@@ -314,7 +312,6 @@ func getPeerDir(id string) (string) {
 	for _, p := range connList {
 		if (*p).ID == id {
 			requiredPeer = p
-
 		}
 	}
 	return requiredPeer.PathToFiles
