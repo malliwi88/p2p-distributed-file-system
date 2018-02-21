@@ -32,7 +32,6 @@ func InterruptHandler(mountpoint string, FileSystem *FS) {
 
 
 func FUSE(mountpoint string) {
-
 	
 	backupDir := "/mnt/"+myID+"_backup/"
 	// load meta data
@@ -58,12 +57,8 @@ func FUSE(mountpoint string) {
     	filemeta.Node.Attributes = meta.Attributes
     	filemeta.Replicas = meta.Replicas
 		fileArray = append(fileArray, &filemeta)
-		
-
-
 	}
-	////////////////////////////////////////////////////
-	
+	////////////////////////////////////////////////////	
 	fuse.Unmount(mountpoint)
 	c, err := fuse.Mount(mountpoint)
 	if err != nil {
@@ -75,19 +70,15 @@ func FUSE(mountpoint string) {
 	FileSystem.root.InitNode()
 	FileSystem.root.files = &fileArray
 	go InterruptHandler(mountpoint, FileSystem)
-	
 	err = fs.Serve(c, FileSystem)
 	if err != nil {
 		log.Fatal(err)
-
 	}
 	// check if the mount process has an error to report
 	<-c.Ready
 	if err := c.MountError; err != nil {
 		log.Fatal(err)
 	}
-
-
 }
 
 

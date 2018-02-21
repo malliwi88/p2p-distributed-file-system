@@ -9,6 +9,7 @@ import (
 )
 
 type File struct{
+	
 	Node
 	DataNodes map[uint64][]*OneBlockInfo
 	Replicas int
@@ -22,7 +23,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Blocks = f.Attributes.Blocks
 	a.BlockSize = f.Attributes.BlockSize
 	log.Println("Requested Attr for File", f.Name, "has data size", f.Attributes.Size, "has blocks", f.Attributes.Blocks)
-	// go f.SaveMetaFile()
+	go f.SaveMetaFile()
 	return nil
 }
 

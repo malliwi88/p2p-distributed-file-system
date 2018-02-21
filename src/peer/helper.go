@@ -219,7 +219,6 @@ func recvBlock(peer *Peer, block uint64) ([]byte, error) {
 	conn, err := net.Dial(peer.Network(), peer.String())   	
    	if err != nil {
 		log.Fatalln(err)
-
     }
 	// peer.Conn = getConn(peer).Conn
 	// conn := peer.Conn
