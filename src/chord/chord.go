@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"bufio"
 	"time"
+	"bazil.org/fuse"
 )
 
 var Root *Peer
@@ -103,10 +104,10 @@ type Peer struct {
 
 	Address    	string
 	Finger 		[]string		// the addresses should contain an ip and a port number
-	SuccList	[]string;
+	SuccList	[]string
 	Successor 	string
 	Predecessor	string
-	Store		map[string][]byte
+	Store		map[string]struct{}
 	Next		int
 }
 
@@ -117,7 +118,7 @@ func (n *Peer) init(address string) {
 	n.SuccList = make([]string,0,num_succ_list)
 	n.Successor = ""
 	n.Predecessor = ""
-	n.Store = make(map[string][]byte)
+	n.Store = make(map[string]struct{})
 	n.Next = 1
 }
 
@@ -152,7 +153,9 @@ func (n *Peer) join(addr string) {
 		var res map[string][]byte
 		err = call(n.Successor,"Peer.GetAll",n.Address,&res)
 		checkError(err)
-		n.Store = res
+		// n.Store = res
+		n.put_all(res)
+
 	}
 }
 
@@ -253,8 +256,14 @@ func (n *Peer) check_predecessor() {
 func (n *Peer) put_all(bucket map[string][]byte) {
 
 	for key, value := range bucket {
-		n.Store[key] = value
+		n.Store[key] = struct{}{}
+
+		peerAddr := strings.Split(key,"|")[0]
+		blockName := strings.Split(key,"|")[1]
+		fmt.Println("HERE: ",peerAddr,blockName)
+		writeToDisk(peerAddr,blockName,value)
 	}
+	
 }
 
 func (n *Peer) get_all(address string) map[string][]byte {
@@ -262,15 +271,22 @@ func (n *Peer) get_all(address string) map[string][]byte {
 	new_map := make(map[string][]byte)
 	addr_id := hashString(address)
 	pre_id := hashString(n.Predecessor)
+	var peerAddr string
+	var blockName string
 
-	for key, _ := range n.Store {
+	for key := range n.Store {
 		if(between(pre_id,hashString(key),addr_id,true)){
-			new_map[key] = n.Store[key]
+			peerAddr = strings.Split(key,"|")[0]
+			blockName = strings.Split(key,"|")[1]
+			new_map[key] = readFromDisk(peerAddr,blockName)
 		}
 	}
 
 	for key, _ := range new_map {
         delete(n.Store, key)
+        peerAddr = strings.Split(key,"|")[0]
+		blockName = strings.Split(key,"|")[1]
+		deleteFromDisk(peerAddr,blockName)
 	}
 
 	return new_map
@@ -290,7 +306,12 @@ func (n *Peer) Ping(arg int, reply *int) error {
 }
 
 func (n *Peer) Get(key string, value *[]byte) error {
-	*value = n.Store[key]
+	// *value = n.Store[key]
+	
+	peerAddr := strings.Split(key,"|")[0]
+	blockName := strings.Split(key,"|")[1]
+	*value = readFromDisk(peerAddr,blockName)
+
     return nil
 }
 
@@ -301,7 +322,12 @@ func (n *Peer) GetAll(addr string, reply *map[string][]byte) error {
 }
 
 func (n *Peer) Put(pair Args, reply *bool) error {
-	n.Store[pair.Key] = pair.Val
+	n.Store[pair.Key] = struct{}{}
+
+	peerAddr := strings.Split(pair.Key,"|")[0]
+	blockName := strings.Split(pair.Key,"|")[1]
+	writeToDisk(peerAddr,blockName,pair.Val)
+
 	*reply = true
     return nil
 }
@@ -314,6 +340,11 @@ func (n *Peer) PutAll(bucket map[string][]byte, reply *bool) error {
 
 func (n *Peer)	Delete(key string, reply *bool) error {
 	delete(n.Store,key)
+	
+	peerAddr := strings.Split(key,"|")[0]
+	blockName := strings.Split(key,"|")[1]
+	deleteFromDisk(peerAddr,blockName)
+    
 	*reply = true
     return nil
 }
@@ -374,14 +405,24 @@ func printHelp() {
 	// fmt.Println("- dumpall:		dump all information about every peer.\n")
 }
 
-func InterruptHandler(Root *Peer) {
+func InterruptHandler(Root *Peer, mountpoint string) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	<-sigs
 	var reply bool
-	err := call(Root.Successor,"Peer.PutAll",Root.Store,&reply)
+	err := call(Root.Successor,"Peer.PutAll",Root.get_all(Root.Address),&reply)
 	checkError(err)
 	fmt.Println("\nresponse: ", reply)
+	// var dirName string
+	// for key := range Root.Store {
+	// 	dirName = strings.Split(key,"|")[0]
+	// 	os.Remove(dirName)
+	// }
+	for _, file := range *(FileSystem.root.files) {
+		(*file).SaveMetaFile()
+	}
+	err = fuse.Unmount(mountpoint)
+	checkFatalError(err)			
 	os.Exit(3)
 }
 
@@ -397,8 +438,8 @@ func main() {
 	go Root.stabilize()
 	go Root.fix_fingers()
 	go Root.check_predecessor()
-	go InterruptHandler(Root)
 	go FUSE(*mountpoint)
+	go InterruptHandler(Root,*mountpoint)
 
 	for {
 	
@@ -411,11 +452,25 @@ func main() {
 			Root.join(getLocalAddress()+":"+args[1])
 
 		} else if (args[0] == "quit")  {
-
+			// send all files to succ
 			var reply bool
-			err := call(Root.Successor,"Peer.PutAll",Root.Store,&reply)
+			err := call(Root.Successor,"Peer.PutAll",Root.get_all(Root.Address),&reply)
 			checkError(err)
 			fmt.Println("response: ", reply)
+			// delete all directories
+			// var dirName string
+			// for key := range Root.Store {
+			// 	dirName = strings.Split(key,"|")[0]
+			// 	os.Remove(dirName)
+			// }
+			// save meta file
+			for _, file := range *(FileSystem.root.files) {
+				(*file).SaveMetaFile()
+			}
+			// unmount fuse
+			err = fuse.Unmount(*mountpoint)
+			checkFatalError(err)
+			
 			os.Exit(3)
 
 		} else if (args[0] == "put")  {
@@ -456,11 +511,7 @@ func main() {
 			fmt.Println("Address: ",Root.Address)
 			fmt.Println("Successor: ",Root.Successor)
 			fmt.Println("Successor List: ",Root.SuccList)
-			keys := make([]string, 0, len(Root.Store))
-			for k , _ := range Root.Store {
-        		keys = append(keys, k)
-    		}
-			fmt.Println("Key/Val Store: ",keys)
+			fmt.Println("Key/Val Store: ",Root.Store)
 			fmt.Println("----------------------------------------")
 		
 		} else if (args[0] == "dumpkey")  {

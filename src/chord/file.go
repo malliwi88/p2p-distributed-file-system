@@ -4,8 +4,8 @@ import (
 	"log"
 	"bazil.org/fuse"
 	"golang.org/x/net/context"
-	// "encoding/json"
-	// "os"
+	"encoding/json"
+	"os"
 )
 
 type File struct{
@@ -124,4 +124,20 @@ func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 	return nil
 }
 
+func (f *File) SaveMetaFile() {
 
+	meta := &Meta{Name: f.Name, Attributes: f.Attributes, DataNodes: f.DataNodes, Replicas: f.Replicas}
+    j, err := json.Marshal(meta)
+    if err != nil {
+        log.Println("Error converting backup to json ",err)
+        return
+    }
+	handle, err := os.Create(Root.Address+"_backup/"+f.Name+".meta")
+	defer handle.Close()
+	checkError(err)
+	handle.Chmod(0777)
+	_, err = handle.WriteString(string(j))
+	checkError(err)
+	handle.Sync()
+	log.Println("Saving backup file...")
+}

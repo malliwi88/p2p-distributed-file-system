@@ -2,6 +2,9 @@ package main
 import(
 	"bazil.org/fuse"
 	"time"
+	"path/filepath"
+	"io/ioutil"
+	"os"
 	"fmt"
 	"strconv"
 )
@@ -115,5 +118,30 @@ func deleteBlock(block uint64) {
 	checkError(err)
 	fmt.Println("response: ", reply)
 
+}
 
+func writeToDisk(peerAddr string, blockName string, data []byte) {
+	if _, err := os.Stat(peerAddr); os.IsNotExist(err) {
+		os.Mkdir(peerAddr, 0777)
+	}
+	f, err := os.Create(filepath.Join(peerAddr, blockName))
+	checkError(err)
+	f.Chmod(0777)
+	b, err := f.WriteString(string(data))
+	fmt.Printf("Wrote %d bytes to file: %s \n", b, blockName)
+	f.Sync()
+	f.Close()
+}
+
+func deleteFromDisk(peerAddr string, blockName string) {
+	fmt.Printf("Removing file: %s \n", blockName)
+	err := os.Remove(filepath.Join(peerAddr, blockName))
+	checkError(err)
+}
+
+func readFromDisk(peerAddr string, blockName string) []byte {
+    fmt.Printf("Sending file: %s \n", blockName)
+	dat, err := ioutil.ReadFile(filepath.Join(peerAddr, blockName))
+	checkError(err)
+    return dat
 }
