@@ -260,7 +260,6 @@ func (n *Peer) put_all(bucket map[string][]byte) {
 
 		peerAddr := strings.Split(key,"|")[0]
 		blockName := strings.Split(key,"|")[1]
-		fmt.Println("HERE: ",peerAddr,blockName)
 		writeToDisk(peerAddr,blockName,value)
 	}
 	

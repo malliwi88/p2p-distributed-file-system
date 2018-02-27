@@ -1,3 +1,4 @@
+
 # p2p-distributed-file-system
 Peer to Peer distributed file storage system implemented in GOLANG
 
@@ -30,3 +31,7 @@ The tracker follows a flood-fill algorithm. When a new node arrives, it sends it
 - Tracker to share IPs
 - Fault tolerance
 - Load balancing
+
+
+
+## UNDER DEVELOPMENT ...
