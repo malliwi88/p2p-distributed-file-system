@@ -21,7 +21,7 @@ func (d *Dir) Attr(ctx context.Context, a *fuse.Attr) error {
 }
 
 func (d *Dir) Lookup(ctx context.Context, Name string) (fs.Node, error) { //** find command **//
-	log.Println("Requested lookup for", Name)
+	// log.Println("Requested lookup for", Name)
 	if d.files != nil {
 		for _, n := range *d.files {
 			if n.Name == Name {
@@ -40,7 +40,7 @@ func (d *Dir) Lookup(ctx context.Context, Name string) (fs.Node, error) { //** f
 }
 
 func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	log.Println("Reading all directory")
+	// log.Println("Reading all directory")
 	var content []fuse.Dirent
 	if d.files != nil {
 		for _, f := range *d.files {

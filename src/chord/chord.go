@@ -26,18 +26,10 @@ const keySize = sha1.Size * 8
 var two = big.NewInt(2)
 var hashMod = new(big.Int).Exp(big.NewInt(2), big.NewInt(keySize), nil)
 
-// 160-bit hash of a string
-func hashString(elt string) *big.Int {
-
-    hasher := sha1.New()
-    hasher.Write([]byte(elt))
-    return new(big.Int).SetBytes(hasher.Sum(nil))
-}
-
 // computes the address of a position across the ring that should be pointed to by the given finger table entry (using 1-based numbering)
 func jump(address string, fingerentry int) *big.Int {
 
-    n := hashString(address)
+    n := hash_0(address)
     fingerentryminus1 := big.NewInt(int64(fingerentry) - 1)
     jump := new(big.Int).Exp(two, fingerentryminus1, nil)
     sum := new(big.Int).Add(n, jump)
@@ -143,7 +135,7 @@ func (n *Peer) create() {
 func (n *Peer) join(addr string) {
 
 	n.Predecessor = ""
-	id := hashString(n.Address)
+	id := hash_0(n.Address)
 	var reply string
 	err := call(addr,"Peer.Find",id,&reply)
 	checkError(err)
@@ -161,7 +153,7 @@ func (n *Peer) join(addr string) {
 
 func (n *Peer) find_successor(id *big.Int) string {
 
-	if (between(hashString(n.Address),id,hashString(n.Successor),true)){
+	if (between(hash_0(n.Address),id,hash_0(n.Successor),true)){
 		return n.Successor
 	} else {
 		var reply string
@@ -175,7 +167,7 @@ func (n *Peer) find_successor(id *big.Int) string {
 func (n *Peer) closest_preceding_node(id *big.Int) string {
 
 	for i := num_bits-1; i >= 1; i-- {
-		if(n.Finger[i] != "" && between(hashString(n.Address),hashString(n.Finger[i]),id,false)){
+		if(n.Finger[i] != "" && between(hash_0(n.Address),hash_0(n.Finger[i]),id,false)){
 			return n.Finger[i]
 		}
 	}
@@ -192,7 +184,7 @@ func (n *Peer) stabilize() {
 		err := call(n.Successor, "Peer.Prev",1,&preAddr)
 		checkError(err)
 		if (preAddr != "") {
-			if (between(hashString(n.Address),hashString(preAddr),hashString(n.Successor),false)){
+			if (between(hash_0(n.Address),hash_0(preAddr),hash_0(n.Successor),false)){
 				n.Successor = preAddr
 			}
 		}
@@ -225,7 +217,7 @@ func (n *Peer) stabilize() {
 
 func (n *Peer) notify(addr string) {
 
-	if ( n.Predecessor == "" || between(hashString(n.Predecessor),hashString(addr),hashString(n.Address),false) ){
+	if ( n.Predecessor == "" || between(hash_0(n.Predecessor),hash_0(addr),hash_0(n.Address),false) ){
 		n.Predecessor = addr
 	} 
 }
@@ -239,6 +231,29 @@ func (n *Peer) fix_fingers() {
 			n.Next = 1
 		}
 		n.Finger[n.Next] = n.find_successor(jump(n.Address,n.Next))
+	}
+}
+
+func (n *Peer) replicate_store() {
+// my succ list should have my data all the time, replicate if not	
+	for {		
+		time.Sleep(60 * time.Second)
+
+		new_map := make(map[string][]byte)
+		var peerAddr string
+		var blockName string
+		for key := range n.Store {
+			peerAddr = strings.Split(key,"|")[0]
+			blockName = strings.Split(key,"|")[1]
+			var err error
+			new_map[key], err = readFromDisk(peerAddr,blockName)
+			checkError(err)			
+		}
+		var reply bool	
+		for _, succAddr := range n.SuccList{
+			err := call(succAddr,"Peer.PutAll",new_map,&reply)
+			checkError(err)
+		}
 	}
 }
 
@@ -257,7 +272,6 @@ func (n *Peer) put_all(bucket map[string][]byte) {
 
 	for key, value := range bucket {
 		n.Store[key] = struct{}{}
-
 		peerAddr := strings.Split(key,"|")[0]
 		blockName := strings.Split(key,"|")[1]
 		writeToDisk(peerAddr,blockName,value)
@@ -268,16 +282,32 @@ func (n *Peer) put_all(bucket map[string][]byte) {
 func (n *Peer) get_all(address string) map[string][]byte {
 
 	new_map := make(map[string][]byte)
-	addr_id := hashString(address)
-	pre_id := hashString(n.Predecessor)
+	addr_id := hash_0(address)
+	pre_id := hash_0(n.Predecessor)
 	var peerAddr string
 	var blockName string
 
 	for key := range n.Store {
-		if(between(pre_id,hashString(key),addr_id,true)){
+		if(between(pre_id,hash_1(key),addr_id,true)){
 			peerAddr = strings.Split(key,"|")[0]
 			blockName = strings.Split(key,"|")[1]
-			new_map[key] = readFromDisk(peerAddr,blockName)
+			var err error
+			new_map[key], err = readFromDisk(peerAddr,blockName)
+			checkError(err)
+		}
+		if(between(pre_id,hash_2(key),addr_id,true)){
+			peerAddr = strings.Split(key,"|")[0]
+			blockName = strings.Split(key,"|")[1]
+			var err error
+			new_map[key], err = readFromDisk(peerAddr,blockName)
+			checkError(err)
+		}
+		if(between(pre_id,hash_3(key),addr_id,true)){
+			peerAddr = strings.Split(key,"|")[0]
+			blockName = strings.Split(key,"|")[1]
+			var err error
+			new_map[key], err = readFromDisk(peerAddr,blockName)
+			checkError(err)
 		}
 	}
 
@@ -285,12 +315,12 @@ func (n *Peer) get_all(address string) map[string][]byte {
         delete(n.Store, key)
         peerAddr = strings.Split(key,"|")[0]
 		blockName = strings.Split(key,"|")[1]
-		deleteFromDisk(peerAddr,blockName)
+		err := deleteFromDisk(peerAddr,blockName)
+		checkError(err)
 	}
 
 	return new_map
 }
-
 
 
 // exported server methods
@@ -306,12 +336,11 @@ func (n *Peer) Ping(arg int, reply *int) error {
 
 func (n *Peer) Get(key string, value *[]byte) error {
 	// *value = n.Store[key]
-	
 	peerAddr := strings.Split(key,"|")[0]
 	blockName := strings.Split(key,"|")[1]
-	*value = readFromDisk(peerAddr,blockName)
-
-    return nil
+	var err error
+	*value, err = readFromDisk(peerAddr,blockName)
+    return err
 }
 
 func (n *Peer) GetAll(addr string, reply *map[string][]byte) error {
@@ -325,11 +354,26 @@ func (n *Peer) Put(pair Args, reply *bool) error {
 
 	peerAddr := strings.Split(pair.Key,"|")[0]
 	blockName := strings.Split(pair.Key,"|")[1]
-	writeToDisk(peerAddr,blockName,pair.Val)
-
+	writeToDisk(peerAddr,blockName,pair.Val)	
 	*reply = true
     return nil
 }
+
+func (n *Peer) Replicate(pair Args, reply *bool) error {
+	// send replicas to succ list
+	req := Args{pair.Key, pair.Val}
+	var res bool
+	for _, succAddr := range n.SuccList{
+		if succAddr != n.Address{
+			err := call(succAddr, "Peer.Put",req,&res)
+			checkError(err)
+		}
+	}
+	*reply = true
+    return nil
+}
+
+
 
 func (n *Peer) PutAll(bucket map[string][]byte, reply *bool) error {
 	n.put_all(bucket)
@@ -342,8 +386,21 @@ func (n *Peer)	Delete(key string, reply *bool) error {
 	
 	peerAddr := strings.Split(key,"|")[0]
 	blockName := strings.Split(key,"|")[1]
-	deleteFromDisk(peerAddr,blockName)
+	err := deleteFromDisk(peerAddr,blockName)
     
+	*reply = true
+    return err
+}
+
+func (n *Peer) Dereplicate(key string, reply *bool) error {
+	// delete replicas from succ list
+	var res bool
+	for _, succAddr := range n.SuccList{
+		if succAddr != n.Address{
+			err := call(succAddr, "Peer.Delete",key,&res)
+			checkError(err)
+		}
+	}
 	*reply = true
     return nil
 }
@@ -408,19 +465,10 @@ func InterruptHandler(Root *Peer, mountpoint string) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	<-sigs
-	var reply bool
-	err := call(Root.Successor,"Peer.PutAll",Root.get_all(Root.Address),&reply)
-	checkError(err)
-	fmt.Println("\nresponse: ", reply)
-	// var dirName string
-	// for key := range Root.Store {
-	// 	dirName = strings.Split(key,"|")[0]
-	// 	os.Remove(dirName)
-	// }
 	for _, file := range *(FileSystem.root.files) {
 		(*file).SaveMetaFile()
 	}
-	err = fuse.Unmount(mountpoint)
+	err := fuse.Unmount(mountpoint)
 	checkFatalError(err)			
 	os.Exit(3)
 }
@@ -449,6 +497,7 @@ func main() {
 		if (args[0] == "join")  {
 
 			Root.join(getLocalAddress()+":"+args[1])
+			go Root.replicate_store()
 
 		} else if (args[0] == "quit")  {
 			// send all files to succ
@@ -456,20 +505,13 @@ func main() {
 			err := call(Root.Successor,"Peer.PutAll",Root.get_all(Root.Address),&reply)
 			checkError(err)
 			fmt.Println("response: ", reply)
-			// delete all directories
-			// var dirName string
-			// for key := range Root.Store {
-			// 	dirName = strings.Split(key,"|")[0]
-			// 	os.Remove(dirName)
-			// }
 			// save meta file
 			for _, file := range *(FileSystem.root.files) {
 				(*file).SaveMetaFile()
 			}
 			// unmount fuse
 			err = fuse.Unmount(*mountpoint)
-			checkFatalError(err)
-			
+			checkFatalError(err)	
 			os.Exit(3)
 
 		} else if (args[0] == "put")  {
@@ -477,7 +519,7 @@ func main() {
 			// var reply bool
 			// value := strings.Join(args[2:]," ")
 			// req := Args{args[1],value}
-			// id := hashString(args[1])
+			// id := hash_0(args[1])
 			// addr := Root.find_successor(id)
 			// err := call(addr, "Peer.Put",req,&reply)
 			// checkError(err)
@@ -488,7 +530,7 @@ func main() {
 		} else if (args[0] == "get")  {
 
 			// var reply string
-			// id := hashString(args[1])
+			// id := hash_0(args[1])
 			// addr := Root.find_successor(id)
 			// err := call(addr, "Peer.Get",args[1],&reply)
 			// checkError(err)
@@ -497,7 +539,7 @@ func main() {
 		} else if (args[0] == "delete")  {
 			
 			// var reply bool
-			// id := hashString(args[1])
+			// id := hash_0(args[1])
 			// addr := Root.find_successor(id)
 			// err := call(addr, "Peer.Delete",args[1],&reply)
 			// checkError(err)
@@ -522,7 +564,7 @@ func main() {
 		} else if (args[0] == "ping")  {
 			
 			var reply int
-			err := call(args[1], "Peer.Ping",1,&reply)
+			err := call(getLocalAddress()+":"+args[1], "Peer.Ping",1,&reply)
 			checkError(err)
 			fmt.Println("response: ", reply)
 		

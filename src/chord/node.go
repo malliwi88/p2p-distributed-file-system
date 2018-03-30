@@ -6,6 +6,8 @@ import(
 	"io/ioutil"
 	"os"
 	"fmt"
+	"math/big"
+	"math/rand"
 	"strconv"
 )
 
@@ -88,35 +90,134 @@ func BlockCheck(offsetBlock uint64, dataNodes *map[uint64][]*OneBlockInfo, buffe
 	}
 }
 
-func sendBlock(data []byte, block uint64) {
-	var reply bool
+type Load struct {
+    respTime time.Duration
+    address string
+}
+
+func getLoad(id *big.Int, c chan Load) {
+	startTime := time.Now()
+
+	r := rand.Intn(100)
+	time.Sleep(time.Duration(r) * time.Millisecond)
+	
+	var reply int
+	addr := Root.find_successor(id)
+	err := call(addr, "Peer.Ping",1,&reply)
+	checkError(err)
+	elapsedTime := (time.Now()).Sub(startTime)
+	resp := new(Load)
+	resp.respTime = elapsedTime
+	resp.address = addr 
+	c <- *resp
+}
+
+
+func sendBlock(data []byte, block uint64) {	
+	// get load in parallel
+	id1 := hash_1(Root.Address + "|" + strconv.Itoa(int(block)))
+	id2 := hash_2(Root.Address + "|" + strconv.Itoa(int(block)))
+	id3 := hash_3(Root.Address + "|" + strconv.Itoa(int(block)))
+	c1 := make(chan Load)
+	c2 := make(chan Load)
+	c3 := make(chan Load)
+	go getLoad(id1, c1)
+	go getLoad(id2, c2)
+	go getLoad(id3, c3)
+	x, y, z := <-c1, <-c2, <-c3
+	var minLoadPeer string
+	if x.respTime <= y.respTime && x.respTime <= z.respTime {
+		minLoadPeer = x.address
+	} else if y.respTime <= x.respTime && y.respTime <= z.respTime {
+		minLoadPeer = y.address
+	}else if z.respTime <= x.respTime && z.respTime <= y.respTime {
+		minLoadPeer = z.address
+	}
+
 	encrypted_data := Encrypt(data, []byte(encrypt_key), int64(len(data)))
 	req := Args{Root.Address + "|" + strconv.Itoa(int(block)),encrypted_data}
-	id := hashString(req.Key)
-	addr := Root.find_successor(id)
-	err := call(addr, "Peer.Put",req,&reply)
+	var reply bool
+	fmt.Println("orig key holder: ",minLoadPeer)
+	err := call(minLoadPeer, "Peer.Put",req,&reply)
 	checkError(err)
-	fmt.Println("response: ", reply)
+	// fmt.Println("response: ", reply)
 
+	// send replica
+	go call(minLoadPeer, "Peer.Replicate",req,&reply)
+
+}
+
+type ValidData struct {
+    invalid error
+    data []byte
+    addr string
+}
+
+func getFromPeer(addr string,block uint64, c chan ValidData){
+	var reply []byte
+	err := call(addr, "Peer.Get",Root.Address + "|" + strconv.Itoa(int(block)),&reply)
+	resp := new(ValidData)
+	resp.invalid = err	
+	resp.data = reply
+	resp.addr = addr	
+	c <- *resp
 }
 
 func recvBlock(block uint64) ([]byte, error) {
-	var reply []byte
-	id := hashString(Root.Address + "|" + strconv.Itoa(int(block)))
-	addr := Root.find_successor(id)
-	err := call(addr, "Peer.Get",Root.Address + "|" + strconv.Itoa(int(block)),&reply)
-	checkError(err)
-	decrypted_data := Decrypt(reply, []byte(encrypt_key))
+	id1 := hash_1(Root.Address + "|" + strconv.Itoa(int(block)))
+	id2 := hash_2(Root.Address + "|" + strconv.Itoa(int(block)))
+	id3 := hash_3(Root.Address + "|" + strconv.Itoa(int(block)))
+	addr1 := Root.find_successor(id1)
+	addr2 := Root.find_successor(id2)
+	addr3 := Root.find_successor(id3)
+	
+	c := make(chan ValidData)
+	go getFromPeer(addr1,block,c)
+	go getFromPeer(addr2,block,c)
+	go getFromPeer(addr3,block,c)
+	x, y , z := <-c, <-c, <-c
+	var encoded_data []byte
+	if x.invalid == nil{
+		encoded_data = x.data
+	} else if y.invalid == nil{
+		encoded_data = y.data
+	} else {
+		encoded_data = z.data
+	}
+	
+	decrypted_data := Decrypt(encoded_data, []byte(encrypt_key))
 	return decrypted_data, nil
 }
 
+
 func deleteBlock(block uint64) {
+	id1 := hash_1(Root.Address + "|" + strconv.Itoa(int(block)))
+	id2 := hash_2(Root.Address + "|" + strconv.Itoa(int(block)))
+	id3 := hash_3(Root.Address + "|" + strconv.Itoa(int(block)))
+	addr1 := Root.find_successor(id1)
+	addr2 := Root.find_successor(id2)
+	addr3 := Root.find_successor(id3)
+	
+	c := make(chan ValidData)
+	go getFromPeer(addr1,block,c)
+	go getFromPeer(addr2,block,c)
+	go getFromPeer(addr3,block,c)
+	x, y , z := <-c, <-c, <-c
+	var addr string
+	if x.invalid == nil{
+		addr = x.addr
+	} else if y.invalid == nil{
+		addr = y.addr
+	} else {
+		addr = z.addr
+	}
 	var reply bool
-	id := hashString(Root.Address + "|" + strconv.Itoa(int(block)))
-	addr := Root.find_successor(id)
 	err := call(addr, "Peer.Delete",Root.Address + "|" + strconv.Itoa(int(block)),&reply)
 	checkError(err)
-	fmt.Println("response: ", reply)
+	// fmt.Println("response: ", reply)
+
+	go call(addr, "Peer.Dereplicate",Root.Address + "|" + strconv.Itoa(int(block)),&reply)
+
 
 }
 
@@ -127,21 +228,24 @@ func writeToDisk(peerAddr string, blockName string, data []byte) {
 	f, err := os.Create(filepath.Join(peerAddr, blockName))
 	checkError(err)
 	f.Chmod(0777)
-	b, err := f.WriteString(string(data))
-	fmt.Printf("Wrote %d bytes to file: %s \n", b, blockName)
+	_, err = f.WriteString(string(data))
+	// fmt.Printf("Wrote %d bytes to file: %s \n", b, blockName)
 	f.Sync()
 	f.Close()
 }
 
-func deleteFromDisk(peerAddr string, blockName string) {
-	fmt.Printf("Removing file: %s \n", blockName)
+func deleteFromDisk(peerAddr string, blockName string) error {
 	err := os.Remove(filepath.Join(peerAddr, blockName))
-	checkError(err)
+	// if err == nil{
+		// fmt.Printf("Removing file: %s \n", blockName)
+	// }
+	return err
 }
 
-func readFromDisk(peerAddr string, blockName string) []byte {
-    fmt.Printf("Sending file: %s \n", blockName)
+func readFromDisk(peerAddr string, blockName string) ([]byte,error) {
 	dat, err := ioutil.ReadFile(filepath.Join(peerAddr, blockName))
-	checkError(err)
-    return dat
+    // if err == nil{
+    	// fmt.Printf("Sending file: %s \n", blockName)
+    // }
+    return dat, err
 }

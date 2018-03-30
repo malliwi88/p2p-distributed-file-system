@@ -20,13 +20,13 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Size = f.Attributes.Size
 	a.Blocks = f.Attributes.Blocks
 	a.BlockSize = f.Attributes.BlockSize
-	log.Println("Requested Attr for File", f.Name, "has data size", f.Attributes.Size, "has blocks", f.Attributes.Blocks)
+	// log.Println("Requested Attr for File", f.Name, "has data size", f.Attributes.Size, "has blocks", f.Attributes.Blocks)
 	return nil
 }
 
 
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	log.Printf("Read %d bytes from offset %d from file %s",req.Size, req.Offset, f.Name)
+	// log.Printf("Read %d bytes from offset %d from file %s",req.Size, req.Offset, f.Name)
 	limit := uint64(req.Offset) + uint64(req.Size)
 	if limit > f.Attributes.Size {
 		limit = f.Attributes.Size
@@ -81,7 +81,7 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	f.Attributes.Size = limit
 	f.Attributes.Blocks = Blocks(f.Attributes.Size)
 	resp.Size = int(write_length)	
-	log.Printf("Wrote %d bytes offset by %d to file %s", write_length, write_offset, f.Name)
+	// log.Printf("Wrote %d bytes offset by %d to file %s", write_length, write_offset, f.Name)
 		
 	return nil
 
@@ -92,7 +92,7 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 	// File truncation
 	if req.Valid.Size() {
 		numBlocksB4 := f.Attributes.Blocks
-		log.Printf("Truncate size from %d to %d on file %s", f.Attributes.Size, req.Size, f.Name)
+		// log.Printf("Truncate size from %d to %d on file %s", f.Attributes.Size, req.Size, f.Name)
 		f.Attributes.Size = req.Size
 		f.Attributes.Blocks = Blocks(f.Attributes.Size)
 		// remove rest of the blocks
@@ -120,7 +120,7 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 }
 
 func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
-	log.Println("fsync on file")
+	// log.Println("fsync on file")
 	return nil
 }
 
