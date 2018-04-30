@@ -22,7 +22,7 @@ To run the peer launch app.py which will open up a GUI. The user will have to en
 After quitting FUSE the user needs to click on 'Exit' button of the GUI to exit the entire program.
 
 ## Description:
-
+See google docs for detailed explanation: https://docs.google.com/document/d/17GVUKNmyi63_IA0IxgAtiRKA8j5ZGQLpPwCeyxHzFdA/edit?usp=sharing
 
 ## Functions implemented:
 - FUSE Filesystem
