@@ -1,169 +1,99 @@
 package main
 
 import (
-  "net"
-  "fmt"
-  "os"
-  "log"
-  "strings"
-  "encoding/json"
+	"os"
+	"fmt"
+	// "errors"
+	"net"
+	"net/rpc"
 )
 
-var userMap = make(map[string]*User)  // user name password
+type Tracker struct {
+	Address string
+	Addresses map[string]struct{}
+	RelayAddress string
+}
 
-type User struct {
-	IP string
-	Port string
-	// Conn net.Conn
-	ListenAddr string
+
+func getLocalAddress() string {
+
+    var localaddress string
+    ifaces, err := net.Interfaces()
+    if err != nil {
+        panic("init: failed to find network interfaces")
+    }
+    // find the first non-loopback interface with an IP address
+    for _, elt := range ifaces {
+        if elt.Flags & net.FlagLoopback == 0 && elt.Flags & net.FlagUp != 0 {
+            addrs, err := elt.Addrs()
+            if err != nil {
+                panic("init: failed to get addresses for network interface")
+            }
+            for _, addr := range addrs {
+                if ipnet, ok := addr.(*net.IPNet); ok {
+                    if ip4 := ipnet.IP.To4(); len(ip4) == net.IPv4len {
+                        localaddress = ip4.String()
+                        break
+                    }
+                }
+            }
+        }
+    }
+    if localaddress == "" {
+        panic("init: failed to find non-loopback interface with valid address on this node")
+    }
+    return localaddress
 }
 
 
 
-type message struct {
-	Type string `json:"type"`
-	Data []byte `json:"data"`
-	BlockName uint64 `json:"name"`
-	PeerID string `json:"id"`
-	ListenAddr string `json:"listenaddr"`
-	PeerAddr string `json:"peeraddr"`
-}
-
-
-
-func listen(master User) {
-  
-	listen, err := net.Listen("tcp", ":" + master.Port)
-	defer listen.Close()
-	
-	if err != nil {
-		log.Fatalf("Socket listen port %s failed,%s", master.Port, err)
-		os.Exit(1)
-	}
-	
-	log.Printf("Begin listen port: %s", master.Port)
-	
+func (t *Tracker) create() {
+	rpc.Register(t)
+	tcpAddr, err := net.ResolveTCPAddr("tcp",t.Address)
+	checkFatalError(err)
+	listener, err := net.ListenTCP("tcp", tcpAddr)
+	checkFatalError(err)
+	fmt.Println("Tracker serving on: ",t.Address)
 	for {
-		conn, err := listen.Accept()
-		
+		conn, err := listener.Accept()
 		if err != nil {
-			log.Fatalln(err)
 			continue
-		} 
-		
-		go handler(conn)
-	}
-}
-
-
-func handler(conn net.Conn) { 
-  
-	s_addr := strings.Split(conn.RemoteAddr().String(), ":")
-	user := User{IP: s_addr[0], Port: s_addr[1]}
-	log.Printf("Got request" + " from: %v",user)
-	var msg message
-	decoder := json.NewDecoder(conn)
-	err := decoder.Decode(&msg)
-	if err != nil {
-	    fmt.Println(err)
-	}
-  
-	if msg.Type == "login" {
-    
-	    name := msg.PeerID
-
-	    if _, ok := userMap[name]; ok {
-    
-			log.Println(name, "logged in!")
-			if userMap[name].IP != user.IP || userMap[name].Port != user.Port || userMap[name].ListenAddr != msg.ListenAddr {
-        
-		        log.Println(name, "changed its IP/Port")
-				for key, value := range userMap {
-					if key != name {
-						updateUser(name, msg.ListenAddr, value)
-					}
-				}
-
-		        user.ListenAddr = msg.ListenAddr
-				
-				for key, value := range userMap {
-					if key != name {
-						addUser((strings.Split(key, ":"))[0], value.ListenAddr, &user)
-					}
-				}
-
-		        userMap[name] = &user
-			}
-
-	    } else {
-
-			for _, value := range userMap {
-		        addUser(name, msg.ListenAddr, value)
-			}
-	      
-			user.ListenAddr = msg.ListenAddr
-			for key, value := range userMap {
-		        addUser((strings.Split(key, ":"))[0], value.ListenAddr, &user)
-			}
-	      
-			userMap[name] = &user
-
 		}
+		go rpc.ServeConn(conn)
 	}
-	conn.Close()
 
 }
 
-
-func addUser(NewUserID string, NewUserAddr string, User *User) {
-
-	conn, err := net.Dial("tcp", User.ListenAddr)    
-	if err != nil {
-	    log.Println(err)
-	    return
-	}
-
-	m := message{"add", []byte(""), 0, NewUserID, "", NewUserAddr}
-	err = json.NewEncoder(conn).Encode(&m)
-	if err != nil {
-	    fmt.Println(err)
-	}
-	var msg message
-	decoder := json.NewDecoder(conn)
-	err = decoder.Decode(&msg)
-	if err != nil {
-	    fmt.Println(err)
-	}    
+func (t *Tracker) GetRootPeer(peer_id string,reply *map[string]struct{}) error {
+	*reply = t.Addresses
+	t.Addresses[peer_id] = struct{}{}
+	return nil
 }
 
-func updateUser(ChangedUserID string, ChangedUserAddr string, User *User) {
-
-	conn, err := net.Dial("tcp", User.ListenAddr)    
-	if err != nil {
-	    log.Println(err)
-	    return
-	}
-
-	m := message{"update", []byte(""), 0, ChangedUserID, "", ChangedUserAddr}
-	err = json.NewEncoder(conn).Encode(&m)
-	if err != nil {
-		fmt.Println(err)
-	}
-	var msg message
-	decoder := json.NewDecoder(conn)
-	err = decoder.Decode(&msg)
-	if err != nil {
-	    fmt.Println(err)
-	}
+func (t *Tracker) GetRelayAddr(dummy bool,reply *string) error {
+	*reply = t.RelayAddress
+	return nil
 }
+
+
+func checkFatalError(err error) {
+    if err != nil {
+        fmt.Println("Fatal error ", err.Error())
+        os.Exit(1)
+    }
+}
+
 
 func main() {
+	
+	// root_peer := getLocalAddress()+":5000"
+	bootMap := make(map[string]struct{})
+	// root[root_peer] = struct{}{}
 
-	central_port := "8080"
-	interface_addr, _ := net.InterfaceAddrs()
-	local_IP := interface_addr[0].String()
-	central := User{IP: local_IP, Port: central_port}
-	fmt.Println("Central server details: ", central)
+	IpTable := new(Tracker)
+	IpTable.Address = getLocalAddress()+":1234"			// tracker serve addr
+	IpTable.Addresses = bootMap 							// peers serve addr
+	IpTable.RelayAddress = getLocalAddress()+":5555"	// relay serve addr
+	IpTable.create()
 
-	listen(central)
 }

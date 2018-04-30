@@ -80,6 +80,9 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 		for index,value:= range *d.files {
 			if req.Name == value.Name {
 				*d.files = append((*d.files)[:index], (*d.files)[index+1:]...)
+				if value.Attributes.Blocks == 0{
+					return nil
+				}
 				for i := value.Attributes.Blocks-1; i >= 0; i-- {
 					for j := 0; j < value.Replicas; j++{
 						deleteBlock(value.DataNodes[i][j].Name)
@@ -96,3 +99,20 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	}
 	return fuse.ENOENT
 }
+
+
+// func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir Node) error{
+
+// 	log.Println("RENAME FILE")
+// 	log.Println(req.OldName,req.NewName,newDir)
+// 	return nil
+
+// }
+
+// func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir Node) error{
+
+// 	log.Println("RENAME FILE")
+// 	log.Println(req.OldName,req.NewName,newDir)
+// 	return nil
+
+// }e
