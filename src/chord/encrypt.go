@@ -30,10 +30,10 @@ func Decrypt(enc_file []byte,key []byte) []byte{
     if err != nil {
         fmt.Println(err.Error())
     }
-	var size int64 = int64(len(enc_file))
-	if size%8 != 0{
-		log.Fatal("size must be power of 2 greater than 8")
-	}
+    var size int64 = int64(len(enc_file))
+    if size%8 != 0{
+        log.Fatal("size must be power of 2 greater than 8")
+    }
     var decrypt [8]byte
     dec_file := make([]byte, size)
     var i int64

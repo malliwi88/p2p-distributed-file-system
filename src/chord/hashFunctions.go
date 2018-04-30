@@ -4,7 +4,6 @@ import (
 	"crypto/sha1"
 	"math/big"
 	"crypto/rand"
-	// "fmt"
 )
 
 func hash_0(elt string) *big.Int {
@@ -45,19 +44,3 @@ func GenerateRandomBytes(n int) ([]byte, error) {
     }
     return b, nil
 }
-
-
-// func main(){
-
-// 	h0 := hash_0("z")
-// 	h1 := hash_1("z")
-// 	h2 := hash_2("z")
-// 	h3 := hash_3("z")
-
-// 	fmt.Println(h0.BitLen(),h1.BitLen(),h2.BitLen(),h3.BitLen())
-// 	fmt.Println(h0)
-// 	fmt.Println(h1)
-// 	fmt.Println(h2)
-// 	fmt.Println(h3)
-
-// }

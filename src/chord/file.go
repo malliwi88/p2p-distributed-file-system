@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"bazil.org/fuse"
+	"bazil.org/fuse/fs"
 	"golang.org/x/net/context"
 	"encoding/json"
 	"os"
@@ -132,7 +133,7 @@ func (f *File) SaveMetaFile() {
         log.Println("Error converting backup to json ",err)
         return
     }
-	handle, err := os.Create(Root.Address+"_backup/"+f.Name+".meta")
+	handle, err := os.Create(Root.ID+"_backup/"+f.Name+".meta")
 	defer handle.Close()
 	checkError(err)
 	handle.Chmod(0777)
@@ -140,4 +141,12 @@ func (f *File) SaveMetaFile() {
 	checkError(err)
 	handle.Sync()
 	log.Println("Saving backup file...")
+}
+
+func (f *File) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error{
+
+	log.Println("RENAME FILE")
+	log.Println(req.OldName,req.NewName,newDir)
+	return nil
+
 }

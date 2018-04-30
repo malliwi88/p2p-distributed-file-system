@@ -21,7 +21,7 @@ type Meta struct {
 
 func FUSE(mountpoint string) {
 
-	backupDir := Root.Address + "_backup/"
+	backupDir := Root.ID + "_backup/"
 	// load meta data
 	if _, err := os.Stat(backupDir); os.IsNotExist(err) {
 		os.Mkdir(backupDir, 0777)
@@ -48,7 +48,8 @@ func FUSE(mountpoint string) {
 	}
 
 	fuse.Unmount(mountpoint)
-	c, err := fuse.Mount(mountpoint)
+	mountopt := fuse.AllowOther()
+	c, err := fuse.Mount(mountpoint,mountopt)
 	if err != nil {
 		log.Fatal(err)
 	}
