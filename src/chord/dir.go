@@ -6,6 +6,7 @@ import (
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
 	"golang.org/x/net/context"
+	"time"
 )
 
 type Dir struct{
@@ -101,18 +102,17 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 }
 
 
-// func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir Node) error{
+func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error{
 
-// 	log.Println("RENAME FILE")
-// 	log.Println(req.OldName,req.NewName,newDir)
-// 	return nil
-
-// }
-
-// func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir Node) error{
-
-// 	log.Println("RENAME FILE")
-// 	log.Println(req.OldName,req.NewName,newDir)
-// 	return nil
-
-// }e
+	if *d.files != nil {
+		for _,value:= range *d.files {
+			if req.OldName == value.Name {
+				value.Name = req.NewName
+				value.Attributes.Mtime = time.Now()
+				value.Attributes.Atime = time.Now()
+				return nil
+			}
+		}
+	}	
+	return fuse.ENOENT
+}
