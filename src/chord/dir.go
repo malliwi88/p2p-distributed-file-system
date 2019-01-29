@@ -97,6 +97,7 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 				return nil
 			}
 		}
+		
 	}
 	return fuse.ENOENT
 }

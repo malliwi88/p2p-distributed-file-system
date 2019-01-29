@@ -134,6 +134,7 @@ func (f *File) SaveMetaFile() {
         return
     }
 	handle, err := os.Create(Root.ID+"_backup/"+f.Name+".meta")
+	
 	defer handle.Close()
 	checkError(err)
 	handle.Chmod(0777)

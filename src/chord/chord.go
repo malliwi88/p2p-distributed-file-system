@@ -78,12 +78,7 @@ func RandStringBytes(n int) string {
     return string(b)
 }
 
-func raw_input(txt string) string{
-    fmt.Print(txt)
-    var input string
-    fmt.Scanln(&input)
-    return input
-}
+
 
 
 // computes the address of a position across the ring that should be pointed to by the given finger table entry (using 1-based numbering)
@@ -154,14 +149,14 @@ func isBehindNAT() bool {
 
 func checkFatalError(err error) {
     if err != nil {
-        fmt.Println("Fatal error ", err.Error())
+        // fmt.Println("Fatal error ", err.Error())
         os.Exit(1)
     }
 }
 
 func checkError(err error) {
     if err != nil {
-        fmt.Println("Connection error ", err.Error())
+        // fmt.Println("Connection error ", err.Error())
     }
 }
 
@@ -614,9 +609,9 @@ func call(address string, method string, req interface{}, reply interface{}) err
 
 
 func printHelp() {
-	fmt.Println("- help:			display commands")
-	fmt.Println("- dump:			display information about the current node.")
-	fmt.Println("- quit:			quit the program.")
+	// fmt.Println("- help:			display commands")
+	// fmt.Println("- dump:			display information about the current node.")
+	// fmt.Println("- quit:			quit the program.")
 	// fmt.Println("- join <addr>:		join an existing ring.")
 	// fmt.Println("- create:		create a new ring.")
 	// fmt.Println("- ping <addr>:		send ping to the address.")
@@ -725,8 +720,14 @@ func main() {
 			var reply bool
 			err := call(Root.Successor.Naddr,"Peer.PutAll",Root.get_all(Root.ID),&reply)
 			checkError(err)
-			fmt.Println("response: ", reply)
+			// fmt.Println("response: ", reply)
 			// save meta file
+			err = os.RemoveAll(Root.ID+"_backup/")
+			checkError(err)
+			backupDir := Root.ID + "_backup/"
+			if _, err := os.Stat(backupDir); os.IsNotExist(err) {
+				os.Mkdir(backupDir, 0777)
+			}
 			for _, file := range *(FileSystem.root.files) {
 				(*file).SaveMetaFile()
 			}

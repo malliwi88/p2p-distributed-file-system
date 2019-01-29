@@ -5,7 +5,7 @@ import(
 	"path/filepath"
 	"io/ioutil"
 	"os"
-	"fmt"
+	// "fmt"
 	"math/big"
 	"math/rand"
 	"strconv"
@@ -139,7 +139,7 @@ func sendBlock(data []byte, block uint64) {
 	}else if z.respTime <= x.respTime && z.respTime <= y.respTime {
 		minLoadPeer = z.address
 	}
-	fmt.Println("Original Key Holder: ",minLoadPeer)
+	// fmt.Println("Original Key Holder: ",minLoadPeer)
 	encrypted_data := Encrypt(data, []byte(encrypt_key), int64(len(data)))
 	req := Args{Root.ID + "|" + strconv.Itoa(int(block)),encrypted_data}
 	var reply bool
