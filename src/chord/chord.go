@@ -609,9 +609,9 @@ func call(address string, method string, req interface{}, reply interface{}) err
 
 
 func printHelp() {
-	// fmt.Println("- help:			display commands")
-	// fmt.Println("- dump:			display information about the current node.")
-	// fmt.Println("- quit:			quit the program.")
+	fmt.Println("- help:			display commands")
+	fmt.Println("- dump:			display information about the current node.")
+	fmt.Println("- quit:			quit the program.")
 	// fmt.Println("- join <addr>:		join an existing ring.")
 	// fmt.Println("- create:		create a new ring.")
 	// fmt.Println("- ping <addr>:		send ping to the address.")
@@ -715,6 +715,7 @@ func main() {
 		input, _ := reader.ReadString('\n')
 		args := strings.Fields(input);
 		
+		if (len(args)> 0)  {
 		if (args[0] == "quit")  {
 			// send all files to succ
 			var reply bool
@@ -795,6 +796,6 @@ func main() {
 		
 		} else {            
 			printHelp()
-		}
+		}}
 	}
 }

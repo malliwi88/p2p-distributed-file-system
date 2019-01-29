@@ -1,7 +1,8 @@
 import os
+import sys
 import uuid
 import Tkinter as tk
-import tkFileDialog
+from tkFileDialog import askdirectory
 import json
 from subprocess import *
 
@@ -44,6 +45,8 @@ class Application(tk.Frame):
         self.btn_gen = tk.Button(self.row_uid, text="Generate User", command=self.gen)
         self.btn_pwd = tk.Checkbutton(self.row_pwd, text="Show Password", variable=self.pwd_var, command=self.toggler)
         self.btn_mnt = tk.Button(self.row_mnt, text="Browse File", command=self.browse)
+        self.btn_dmp = tk.Button(self.row_trk, text="Dump", command=self.dump,width=10)
+        self.btn_hlp = tk.Button(self.row_btn, text="Help", command=self.help,width=10)
         self.btn_run = tk.Button(self.row_btn, text="Run", command=self.start,width=10)
         self.btn_end = tk.Button(self.row_btn, text="Exit", command=self.exit,width=10)
         ################# PACKER #################
@@ -67,12 +70,14 @@ class Application(tk.Frame):
         self.btn_gen.pack(side=tk.LEFT,padx=40)
         self.btn_pwd.pack(side=tk.LEFT,padx=40)
         self.btn_mnt.pack(side=tk.LEFT,padx=40)
+        self.btn_dmp.pack(side=tk.LEFT,padx=40)
+        self.btn_hlp.pack(side=tk.LEFT,padx=40)
         self.btn_run.pack(side=tk.LEFT,padx=150)
         self.btn_end.pack(side=tk.LEFT)
 
 
     def browse(self):
-        dirname = tkFileDialog.askdirectory()
+        dirname = askdirectory()
         self.mnt.set(dirname)
         self.ent_mnt.delete(0,tk.END)
         self.ent_mnt.insert(0,dirname)
@@ -93,24 +98,48 @@ class Application(tk.Frame):
         self.ent_pwd.delete(0,tk.END)
         self.ent_pwd.insert(0,gen_pwd)
 
+    def dump(self):
+        self.app_handler.stdin.write(b'dump\n')
+
+    def help(self):
+        print "- Help:            display commands\n- Dump:            display information about the current node.\n- Quit:            quit the program."
+
     def start(self):
         uid = "-uid="+self.uid.get()
         pwd = "-pwd="+self.pwd.get()
         mnt = "-mnt="+self.mnt.get()
         trk = "-trk="+self.trk.get()
+        try:
+            os.mkdir( self.mnt.get() )
+        except Exception as err:
+            pass
         self.btn_run.config(state=tk.DISABLED)
-        # print "starting with \nuid:{}\npwd:{}\nmnt:{}\ntrk:{}".format(uid,pwd,mnt,trk)
-        Popen([str(os.getcwd())+"/bin/./chord", uid,pwd,mnt,trk])
-        # Popen(["sudo", "/home/paitha/go/bin/chord", "-mount="+mount, "-uid="+uid,"-pwd="+pwd,], stdin=PIPE, stderr=PIPE, stdout=PIPE)
         print "Booting up..."
+        # dev mode
+        # self.app_handler = Popen([str(os.getcwd())+"/bin/./chord", uid,pwd,mnt,trk])      #rpc commands available, quit is called via GUI indirectly or from stdin directly
+        # user mode
+        self.app_handler = Popen([str(os.getcwd())+"/bin/./chord", uid,pwd,mnt,trk], stdin=PIPE)    #rpc commands interfaces disabled, stdin unavailable, quit called by parent(python) process or GUI
+
 
     def exit(self):
+        try:
+            self.app_handler.communicate("quit")
+            self.app_handler.stdin.close()
+        except Exception as e:
+            print "exiting without 'quit'ing: ",e
         root.destroy()
         print "Exiting"
 
 def gen():
     return str(uuid.uuid4())
 
+def getLocalAddr():
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    addr = s.getsockname()[0]
+    s.close()
+    return addr
 
 if __name__ == "__main__":
     print 'Launching...\n'
@@ -123,7 +152,7 @@ if __name__ == "__main__":
         # print(err)
         uid = gen()
         pwd = gen()
-    trk = "10.130.40.213:1234"
-    mnt = str(os.getcwd())
+    trk = getLocalAddr()+":1234"
+    mnt = os.path.join(str(os.getcwd()),'fuse-fs')
     Application(root).pack(side="top", fill="both", expand=True)
     root.mainloop()
